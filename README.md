@@ -131,12 +131,22 @@ Over HTTP, clients send the token as `Authorization: Bearer <token>`. `/healthz`
 
 There is no flag that takes the secret directly.
 
-### Getting an API client
+### Setting up the API client
 
 1. In the Falcon console, go to **Support and resources → Resources and tools → Client Management**, and open the **API clients** tab. Not **MCP clients**: that tab registers MCP clients for CrowdStrike's hosted Falcon MCP, and its credentials do not work here.
 2. Add a client and tick the scopes below, using the console's names. Give it only what you will use: a missing scope just hides those actions.
 3. Do not add **API Client Management**: it cannot be combined with product scopes, and the server does not need it.
 4. Save, then copy the client ID and secret. The secret is shown once.
+5. Put the secret in a file only you can read. Paste it into `cat`, so it stays out of argv and shell history, then press Ctrl-D:
+   ```sh
+   mkdir -p ~/.config/falcon-mcp
+   (umask 077; cat > ~/.config/falcon-mcp/client-secret)
+   ```
+   Surrounding whitespace and the trailing newline are trimmed. For the NixOS service, use a root-only file or a sops-nix/agenix path instead (see [Nix](#nix)).
+6. Point the server at it with `--client-id <id> --client-secret-file ~/.config/falcon-mcp/client-secret` (or the `FALCON_CLIENT_ID` and `FALCON_CLIENT_SECRET_FILE` env vars). Set `--cloud` for a gov cloud; other clouds are autodiscovered.
+7. Call `falcon_status`. It shows whether the token works, the cloud, and which scopes the probe found missing. Grant any you need, then restart the server: the probe runs only at startup.
+
+To rotate the secret, reset it on the API client in the console, overwrite the file, and restart the server.
 
 **Read** scopes, by tool group:
 
