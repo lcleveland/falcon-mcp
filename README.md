@@ -148,33 +148,55 @@ There is no flag that takes the secret directly.
 
 To rotate the secret, reset it on the API client in the console, overwrite the file, and restart the server.
 
-**Read** scopes, by tool group:
+Scopes, in the console's order. **Read** names the tool group that needs read; **Write** names the capabilities that need write, and each also needs that scope's read.
 
-| Group | Read |
-|---|---|
-| respond | Alerts, Cases, Case Templates, Real time response, real-time-response-audit, Quarantined Files |
-| hosts | Hosts, Host Groups, Assets, Zero Trust Assessment, Sensor Usage |
-| prevent | Prevention Policies, Sensor Update Policies, Firewall Management, Device Control Policies, Response Policies, Content Update Policies, IOA Exclusions, Machine Learning Exclusions, Sensor Visibility Exclusions, Custom IOA Rules, IOC Management |
-| intel | Actors (Falcon Intelligence), Indicators (Falcon Intelligence), Reports (Falcon Intelligence), Monitoring rules (Falcon Intelligence Recon) |
-| siem | NGSIEM (**read and write**: a search is started and stopped with write calls), Correlation Rules, Workflows, Scheduled Reports |
-| exposure | Vulnerabilities, Falcon Container Image, Cloud Security API Assets, Cloud Security API Detections, Cloud Security API Risks, Cloud Security Policies, Cloud Groups V2, SaaS Security, Data Protection |
-| identity | Identity Protection Entities (read), Identity Protection GraphQL (**write**: the GraphQL route is a write scope, but the server sends queries only and refuses mutations) |
-| ai | AIDR, Charlotte AI Agent Definition |
+| Scope | Read | Write |
+|---|---|---|
+| Alerts | respond | triage |
+| Case Templates | respond | |
+| Cases | respond | triage |
+| Charlotte AI Agent Definition | ai | workflows (agent invoke, through `falcon_api`) |
+| Content Update Policy | prevent | fleet-config |
+| Correlation Rules | siem | detection-add, detection-remove (through `falcon_api`) |
+| Custom IOA rules | prevent | detection-add, detection-remove |
+| Device control policies | prevent | fleet-config |
+| Hosts | hosts | host-tags, containment, detection-remove, destructive |
+| Assets | hosts | |
+| Actors (Falcon Intelligence) | intel | |
+| Indicators (Falcon Intelligence) | intel | |
+| Reports (Falcon Intelligence) | intel | |
+| Host groups | hosts | fleet-config |
+| NGSIEM | siem | siem: **needed to search**, since a search is started and stopped with write calls |
+| Identity Protection Entities | identity | |
+| Identity Protection GraphQL | | identity: **needed to query**; the GraphQL route is a write scope, but the server sends queries only and refuses mutations |
+| IOC Management | prevent | detection-add, detection-remove |
+| Machine Learning Exclusions | prevent | detection-remove |
+| Prevention policies | prevent | fleet-config |
+| Quarantined Files | respond | detection-remove, destructive |
+| Real time response audit | respond | |
+| Real time response | respond | rtr-read, rtr-respond |
+| Response policies | prevent | fleet-config |
+| Scheduled Reports | siem (also report launch) | |
+| IOA Exclusions | prevent | detection-remove |
+| Sensor update policies | prevent | fleet-config |
+| Sensor Usage | hosts | |
+| Sensor Visibility Exclusions | prevent | detection-remove |
+| Workflow | siem | workflows |
+| Zero Trust Assessment | hosts | |
 
-**Write** scopes, by capability (each also needs its family's read):
+Other scopes the server uses:
 
-| Capability | Write |
-|---|---|
-| triage | Alerts, Cases |
-| host-tags, containment, destructive | Hosts |
-| detection-add | Custom IOA Rules, IOC Management |
-| detection-remove | IOA Exclusions, Machine Learning Exclusions, Sensor Visibility Exclusions, Custom IOA Rules, IOC Management, Quarantined Files, Hosts |
-| fleet-config | Prevention Policies, Sensor Update Policies, Firewall Management, Device Control Policies, Response Policies, Content Update Policies, Host Groups |
-| rtr-read, rtr-respond | Real time response |
-| destructive | Quarantined Files |
-| workflows | Workflows |
-
-`falcon_api`'s untyped writes also need their own write scopes: Correlation Rules, Cloud Security Policies, SaaS Security and Charlotte AI Agent Definition.
+| Scope | Read | Write |
+|---|---|---|
+| Firewall Management | prevent | fleet-config |
+| Monitoring rules (Falcon Intelligence Recon) | intel | |
+| Vulnerabilities | exposure | |
+| Falcon Container Image | exposure | |
+| Cloud Security API Assets, Cloud Security API Detections, Cloud Security API Risks, Cloud Groups V2 | exposure | |
+| Cloud Security Policies | exposure | detection-add, detection-remove (suppression rules, through `falcon_api`) |
+| SaaS Security | exposure | detection-remove (check dismissal, through `falcon_api`) |
+| Data Protection | exposure | |
+| AIDR | ai | |
 
 `falcon_status` shows which scopes the probe found missing. A 401 at startup means the ID or secret is wrong. A 403 from the token endpoint usually means an IP allowlist or a disabled client.
 
