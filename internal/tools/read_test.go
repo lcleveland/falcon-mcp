@@ -316,7 +316,7 @@ func TestToolGroups(t *testing.T) {
 		names = append(names, n)
 	}
 	slices.Sort(names)
-	want := []string{"falcon_discover", "falcon_host", "falcon_host_group", "falcon_sensor_usage", "falcon_status", "falcon_zta"}
+	want := []string{"falcon_api", "falcon_discover", "falcon_host", "falcon_host_group", "falcon_sensor_usage", "falcon_status", "falcon_zta"}
 	if !slices.Equal(names, want) {
 		t.Errorf("tools = %v, want %v", names, want)
 	}

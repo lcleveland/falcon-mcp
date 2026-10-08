@@ -78,7 +78,7 @@ func registerStatus(s *mcp.Server, d Deps) {
 
 func (d Deps) status(ctx context.Context) (*mcp.CallToolResult, any, error) {
 	c := d.Client
-	out := StatusOutput{Tools: map[string][]string{"falcon_status": {}}}
+	out := StatusOutput{Tools: map[string][]string{"falcon_status": {}, "falcon_api": {}}}
 	for _, g := range config.Groups {
 		if d.Config.GroupOn(g) {
 			out.Groups = append(out.Groups, g)

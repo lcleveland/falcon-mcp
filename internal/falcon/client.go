@@ -248,6 +248,12 @@ func (c *Client) Do(ctx context.Context, id string, p Params) (json.RawMessage, 
 	if !ok {
 		return nil, fmt.Errorf("unknown Falcon operation %q", id)
 	}
+	return c.DoOp(ctx, id, op, p)
+}
+
+// DoOp is Do for an op not looked up by ID: falcon_api's raw paths. id
+// only labels logs and errors.
+func (c *Client) DoOp(ctx context.Context, id string, op Op, p Params) (json.RawMessage, error) {
 	path, err := expand(op.Path, p.Path)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", id, err)

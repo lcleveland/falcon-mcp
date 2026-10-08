@@ -107,13 +107,21 @@ func (a Action) inputs(typeParam string) []string {
 // params turns the params input into query parameters, refusing names the
 // action does not take.
 func params(a Action, in Input, q url.Values) error {
-	for k, v := range in.Params {
+	for k := range in.Params {
 		if !slices.Contains(a.Params, k) {
 			if len(a.Params) == 0 {
 				return fmt.Errorf("this action takes no params")
 			}
 			return fmt.Errorf("params: %q is not a parameter of this action (takes %s)", k, strings.Join(a.Params, ", "))
 		}
+	}
+	return queryValues("params", in.Params, q)
+}
+
+// queryValues adds JSON query parameters to q: strings, numbers, booleans
+// or lists of them.
+func queryValues(input string, m map[string]any, q url.Values) error {
+	for k, v := range m {
 		vs, ok := v.([]any)
 		if !ok {
 			vs = []any{v}
@@ -125,7 +133,7 @@ func params(a Action, in Input, q url.Values) error {
 			case string, bool:
 				q.Add(k, fmt.Sprint(x))
 			default:
-				return fmt.Errorf("params: %s must be a string, number, boolean or a list of them", k)
+				return fmt.Errorf("%s: %s must be a string, number, boolean or a list of them", input, k)
 			}
 		}
 	}

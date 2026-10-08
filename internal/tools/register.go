@@ -32,8 +32,9 @@ func Register(s *mcp.Server, d Deps) (int, func()) {
 	}
 	d.jobs = newJobs(d.Client, d.Log)
 	registerStatus(s, d)
+	registerAPI(s, d)
 	registerGuides(s, d)
-	n := 1
+	n := 2
 	for _, t := range Tools() {
 		if as := d.actions(t); len(as) > 0 {
 			must(t.Name, registerTool(s, d, t, as))

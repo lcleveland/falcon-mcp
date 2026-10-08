@@ -1,5 +1,10 @@
 package falcon
 
+import (
+	"iter"
+	"maps"
+)
+
 //go:generate go run ./gen
 
 // Op is one Falcon API operation, keyed by its FalconPy operation ID.
@@ -17,3 +22,6 @@ func Lookup(id string) (Op, bool) {
 	op, ok := ops[id]
 	return op, ok
 }
+
+// All iterates the whole table.
+func All() iter.Seq2[string, Op] { return maps.All(ops) }
