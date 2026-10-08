@@ -36,6 +36,10 @@ _Avoid_: command, method, operation
 The startup check that tries one cheap read per action's scope and hides the actions the API client cannot reach.
 _Avoid_: health check, scope check
 
+**Guide**:
+A query-language reference (FQL fields and operators for one area, CQL, or the RTR workflow) the server serves to the model.
+_Avoid_: doc, help, resource (alone)
+
 **Capability**:
 A named class of write the operator opts into; writes outside an enabled capability do not exist for the client.
 _Avoid_: permission, verb flag
