@@ -111,11 +111,19 @@ var ErrUnknownCloud = errors.New("cloud autodiscovery: unrecognised X-Cs-Region"
 // IsFatal reports a startup error that no retry can fix: the token endpoint
 // refused the credentials, or autodiscovery found no allowed cloud.
 func IsFatal(err error) bool {
-	var ae *APIError
-	if errors.As(err, &ae) && ae.Path == tokenPath {
+	if ae := tokenError(err); ae != nil {
 		return ae.Status == http.StatusUnauthorized || ae.Status == http.StatusForbidden
 	}
 	return errors.Is(err, ErrUnknownCloud)
+}
+
+// tokenError returns err's *APIError when the token endpoint sent it.
+func tokenError(err error) *APIError {
+	var ae *APIError
+	if errors.As(err, &ae) && ae.Path == tokenPath {
+		return ae
+	}
+	return nil
 }
 
 // autodiscover takes a token from us-1, reads the tenant's cloud from

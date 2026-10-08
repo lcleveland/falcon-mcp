@@ -146,7 +146,7 @@ func classify(err error) ProbeResult {
 	var ae *APIError
 	if errors.As(err, &ae) {
 		r := ProbeResult{State: ProbeUnknown, Status: ae.Status, Detail: ae.Detail}
-		if ae.Status == http.StatusForbidden && ae.Path != tokenPath {
+		if ae.Status == http.StatusForbidden && tokenError(err) == nil {
 			r.State = ProbeMissing
 		}
 		return r
