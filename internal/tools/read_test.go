@@ -1,9 +1,11 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"slices"
 	"strings"
@@ -165,11 +167,77 @@ func TestLimitsAndByteCap(t *testing.T) {
 	if err != nil || pos != "200" {
 		t.Errorf("cursor = %q, %v", pos, err)
 	}
+}
 
-	// Falcon's own lower maximum wins.
-	callTool(t, cs, "falcon_quarantine", map[string]any{"action": "search", "limit": 150})
-	if limits[len(limits)-1] != "150" {
-		t.Errorf("quarantine limit = %s", limits[len(limits)-1])
+func TestFalconMaxLimitClamps(t *testing.T) {
+	var limit string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/oauth2/token" {
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"access_token":"tok","expires_in":1799}`))
+			return
+		}
+		limit = r.URL.Query().Get("limit")
+		w.Write([]byte(`{"resources":[]}`))
+	}))
+	defer srv.Close()
+	d := Deps{Client: falcon.New("eu-1", srv.URL, "id", "secret", nil, nil), Config: &config.Config{}}
+	a := Action{Name: "search", Kind: Search, Op: "queryCombinedHostGroups", MaxLimit: 100}
+	if _, err := d.read(context.Background(), "t", a, Input{Limit: 150}); err != nil || limit != "100" {
+		t.Errorf("limit = %s, %v", limit, err)
+	}
+}
+
+func TestOversizedSingleItem(t *testing.T) {
+	huge := `{"resources":[{"device_id":"aid-0001","hostname":"ws-alpha","blob":"` + strings.Repeat("x", maxBytes+10) + `"}]}`
+	cs := sessionWith(t, &config.Config{}, nil, http.StatusCreated, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(huge)) })
+	out, _, _ := callTool(t, cs, "falcon_host", map[string]any{"action": "get", "ids": []string{"aid-0001"}})
+	if b, _ := json.Marshal(out); len(b) > maxBytes || !strings.Contains(string(b), "blob") {
+		t.Errorf("oversized get is %d bytes: %.300s", len(b), b)
+	}
+}
+
+func TestHydrationKeepsQueryOrderAndErrors(t *testing.T) {
+	cs := sessionWith(t, &config.Config{}, nil, http.StatusCreated, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Write([]byte(`{"meta":{"pagination":{"total":3}},"resources":["aid-0003","aid-0001","aid-0002"]}`))
+			return
+		}
+		w.Write([]byte(`{"resources":[{"device_id":"aid-0001"},{"device_id":"aid-0002"},{"device_id":"aid-0003"}],"errors":[{"code":404,"message":"one id not found"}]}`))
+	})
+	out, _, _ := callTool(t, cs, "falcon_host", map[string]any{"action": "search", "sort": "last_seen.desc", "fields": []string{"device_id"}})
+	var got []string
+	for _, x := range out["results"].([]any) {
+		got = append(got, x.(map[string]any)["device_id"].(string))
+	}
+	if strings.Join(got, ",") != "aid-0003,aid-0001,aid-0002" {
+		t.Errorf("order = %v", got)
+	}
+	if e, _ := out["errors"].([]any); len(e) != 1 {
+		t.Errorf("errors = %v", out["errors"])
+	}
+}
+
+func TestAfterLastPageAndEpochTimes(t *testing.T) {
+	cs := sessionWith(t, &config.Config{}, nil, http.StatusCreated, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"meta":{"pagination":{"after":""}},"resources":[{"id":"asset-1","last_seen_timestamp":1759449600,"created_on":1759449600000,"uptime":3600}]}`))
+	})
+	out, _, _ := callTool(t, cs, "falcon_discover", map[string]any{"action": "search_managed_assets", "fields": []string{"id", "last_seen_timestamp", "created_on", "uptime"}})
+	if _, ok := out["next_cursor"]; ok {
+		t.Errorf("an empty after token is the last page: %v", out)
+	}
+	a := out["results"].([]any)[0].(map[string]any)
+	if a["last_seen_timestamp"] != "2025-10-03T00:00:00Z" || a["created_on"] != "2025-10-03T00:00:00Z" || a["uptime"] != 3600.0 {
+		t.Errorf("times = %v", a)
+	}
+}
+
+func TestEmptyFieldsMeansBrief(t *testing.T) {
+	f := &fixtures{routes: map[string]string{"/devices/combined/host-groups/v1": "host_groups_combined.json"}}
+	call := fixtureSession(t, nil, nil, f)
+	out, _, _ := call("falcon_host_group", map[string]any{"action": "search", "fields": []string{}})
+	if g := out["results"].([]any)[0].(map[string]any); g["name"] != "Lab machines" {
+		t.Errorf("fields [] = %v", g)
 	}
 }
 
@@ -186,6 +254,7 @@ func TestCursorBoundToQuery(t *testing.T) {
 		{"action": "search", "filter": "a:'1'", "sort": "hostname.asc", "cursor": cur},
 		{"action": "search", "filter": "a:'1'", "fields": []string{"hostname"}, "cursor": cur},
 		{"action": "search", "filter": "a:'1'", "cursor": "garbage"},
+		{"action": "get", "ids": []string{"x"}, "cursor": cur},
 	} {
 		if _, isErr, text := call("falcon_host", args); !isErr || !strings.Contains(text, "cursor does not belong") {
 			t.Errorf("%v: %s", args, text)
@@ -267,12 +336,12 @@ func TestToolTable(t *testing.T) {
 			if !ok || op.Write {
 				t.Errorf("%s.%s: op %s missing or a write", tl.Name, a.Name, a.Op)
 			}
-			if a.Get != "" {
-				if g, ok := falcon.Lookup(a.Get); !ok || g.Write || g.Scope != op.Scope {
-					t.Errorf("%s.%s: get op %s: %+v", tl.Name, a.Name, a.Get, g)
+			if a.Hydrate != "" {
+				if g, ok := falcon.Lookup(a.Hydrate); !ok || g.Write || g.Scope != op.Scope {
+					t.Errorf("%s.%s: hydrate op %s: %+v", tl.Name, a.Name, a.Hydrate, g)
 				}
 			}
-			if a.Kind == Search && a.Paging == After && a.Get != "" {
+			if a.Kind == Search && a.Paging == After && a.Hydrate != "" {
 				t.Errorf("%s.%s: after-paged hydration is untested", tl.Name, a.Name)
 			}
 		}

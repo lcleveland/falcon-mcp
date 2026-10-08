@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -24,7 +25,7 @@ const (
 	maxBytes     = 60 << 10 // keeps a result inside a sensible slice of context
 )
 
-// Input is every area tool's arguments; each tool's schema keeps only the
+// Input is every tool's arguments; each tool's schema keeps only the
 // fields its actions use.
 type Input struct {
 	Action string   `json:"action" jsonschema:"what to do; the tool description lists the actions"`
@@ -69,6 +70,9 @@ func (d Deps) call(ctx context.Context, op string, p falcon.Params) (*envelope, 
 
 // read runs one read action.
 func (d Deps) read(ctx context.Context, tool string, a Action, in Input) (map[string]any, error) {
+	if a.Kind != Search && in.Cursor != "" {
+		return nil, errors.New("cursor does not belong to this query: only search actions page")
+	}
 	switch a.Kind {
 	case Search:
 		return d.search(ctx, tool, a, in)
@@ -83,7 +87,7 @@ func (d Deps) read(ctx context.Context, tool string, a Action, in Input) (map[st
 		if err != nil {
 			return nil, err
 		}
-		return shape(list(env.Resources), in.Fields, "", env), nil
+		return shape(list(env.Resources), in.Fields, "", noteGet, env), nil
 	}
 	return d.aggregate(ctx, a, in)
 }
@@ -133,12 +137,13 @@ func (d Deps) search(ctx context.Context, tool string, a Action, in Input) (map[
 			ids = append(ids, s)
 		}
 	}
-	if a.Get != "" && len(ids) > 0 {
-		ents, err := d.call(ctx, a.Get, idParams(a.IDs, ids))
+	if a.Hydrate != "" && len(ids) > 0 {
+		ents, err := d.call(ctx, a.Hydrate, idParams(a.IDs, ids))
 		if err != nil {
 			return nil, err
 		}
-		items = list(ents.Resources)
+		items = inOrder(ids, list(ents.Resources))
+		env.Errors = append(env.Errors, ents.Errors...)
 	}
 
 	pg := env.Meta.Pagination
@@ -157,10 +162,10 @@ func (d Deps) search(ctx context.Context, tool string, a Action, in Input) (map[
 		next = ""
 	}
 	fields := in.Fields
-	if fields == nil {
+	if len(fields) == 0 {
 		fields = a.Brief
 	}
-	out := shape(items, fields, encodeCursor(key, next), env)
+	out := shape(items, fields, encodeCursor(key, next), noteSearch, env)
 	if pg.Total != nil {
 		out["total"] = *pg.Total
 	}
@@ -184,7 +189,10 @@ func (d Deps) aggregate(ctx context.Context, a Action, in Input) (map[string]any
 		return nil, err
 	}
 	if l, ok := env.Resources.([]any); ok {
-		return shape(l, in.Fields, "", env), nil
+		return shape(l, in.Fields, "", noteGet, env), nil
+	}
+	if m, ok := env.Resources.(map[string]any); ok && len(in.Fields) > 0 {
+		return capObject(times(project(m, in.Fields))), nil
 	}
 	return capObject(times(env.Resources)), nil
 }
@@ -197,22 +205,52 @@ func idParams(where string, ids []string) falcon.Params {
 	return falcon.Params{Query: url.Values{"ids": ids}}
 }
 
+const (
+	noteSearch = "result too large; repeat with a lower limit or pass fields"
+	noteGet    = "result too large; pass fields or fewer ids"
+)
+
+// inOrder puts hydrated entities back in the order the query returned their
+// ids, so the caller's sort survives. Entities with no matching id go last.
+func inOrder(ids []string, ents []any) []any {
+	pos := make(map[string]int, len(ids))
+	for i, id := range ids {
+		pos[id] = i
+	}
+	rank := func(x any) int {
+		m, _ := x.(map[string]any)
+		for _, k := range []string{"id", "device_id", "composite_id", "aid"} {
+			if s, ok := m[k].(string); ok {
+				if i, ok := pos[s]; ok {
+					return i
+				}
+			}
+		}
+		return len(ids)
+	}
+	slices.SortStableFunc(ents, func(a, b any) int { return rank(a) - rank(b) })
+	return ents
+}
+
 // shape projects, converts times and caps a list of items for the model.
 // The cursor (empty for none) still points past the whole page when the
 // byte cap trims items from the end.
-func shape(items []any, fields []string, cursor string, env *envelope) map[string]any {
+func shape(items []any, fields []string, cursor, note string, env *envelope) map[string]any {
 	for i, x := range items {
 		x = times(x)
-		if fields != nil {
+		if len(fields) > 0 {
 			x = project(x, fields)
 		}
 		items[i] = x
 	}
 	out := map[string]any{}
 	if kept := fit(items); kept < len(items) {
-		out["_truncation"] = map[string]any{"returned": kept, "of": len(items),
-			"note": "result too large; repeat with a lower limit or pass fields"}
+		out["_truncation"] = map[string]any{"returned": kept, "of": len(items), "note": note}
 		items = items[:kept]
+	}
+	if len(items) == 1 && size(items[0]) > maxBytes {
+		// Even one item is too big: name its fields instead.
+		items[0] = capObject(items[0])
 	}
 	if items == nil {
 		items = []any{}
@@ -369,7 +407,7 @@ func times(v any) any {
 
 func timeKey(k string) bool {
 	k = strings.ToLower(k)
-	for _, s := range []string{"timestamp", "_at", "time", "date", "last_seen", "first_seen"} {
+	for _, s := range []string{"timestamp", "_at", "_on", "time", "date", "last_seen", "first_seen"} {
 		if strings.HasSuffix(k, s) {
 			return true
 		}

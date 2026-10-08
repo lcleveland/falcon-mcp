@@ -58,11 +58,9 @@ func registerTool(s *mcp.Server, d Deps, t Tool, as []Action) error {
 	if err != nil {
 		return err
 	}
-	names := make([]any, len(as))
-	for i, a := range as {
-		names[i] = a.Name
+	for _, n := range actionNames(as) {
+		schema.Properties["action"].Enum = append(schema.Properties["action"].Enum, n)
 	}
-	schema.Properties["action"].Enum = names
 	schema.Required = []string{"action"}
 	has := func(f func(Action) bool) bool { return slices.ContainsFunc(as, f) }
 	drop := map[string]bool{

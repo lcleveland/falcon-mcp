@@ -2,7 +2,7 @@ package tools
 
 import "github.com/lcleveland/falcon-mcp/internal/falcon"
 
-// Tool is one area tool: a set of actions over Falcon operations. Adding an
+// Tool is one tool: a set of actions over Falcon operations. Adding an
 // operation is adding an Action; there is no per-action handler code.
 type Tool struct {
 	Name        string // falcon_<area>
@@ -20,8 +20,8 @@ type Action struct {
 	Op   string // the op called first: query, combined, entities or aggregate
 
 	// Search.
-	Get      string   // hydrate the ids Op returns with this entities op; "" when Op is combined
-	Paging   Paging   //
+	Hydrate  string // entities op fetching the ids Op returns; "" when Op is combined
+	Paging   Paging
 	MaxLimit int      // Falcon's own page maximum, when below ours
 	Brief    []string // fields a search keeps unless fields is given; dotted paths reach nested ones
 	Filter   string   // FQL always ANDed with the caller's filter
@@ -29,7 +29,7 @@ type Action struct {
 
 	// IDs says where an entities op takes its ids: the ids query parameter
 	// when empty, else "body:<key>" for a JSON body {<key>: [...]}. It
-	// applies to Get for a search and to Op for a get.
+	// applies to Hydrate for a search and to Op for a get.
 	IDs string
 
 	Param    string // query parameter filled from the id input, e.g. a host group id
@@ -60,7 +60,7 @@ func (a Action) scope() string {
 	return op.Scope
 }
 
-// Tools is the whole area tool table, in registration order.
+// Tools is the whole tool table, in registration order.
 func Tools() []Tool {
 	var all []Tool
 	for _, t := range [][]Tool{respondTools, hostsTools} {
