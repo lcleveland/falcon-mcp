@@ -79,7 +79,7 @@ func (a Action) inputs(typeParam string) []string {
 	case Custom:
 		in = a.Inputs
 	}
-	if len(a.Query) > 0 {
+	if len(a.Params) > 0 {
 		in = append(in, "params")
 	}
 	if a.Type != "" {
@@ -92,19 +92,21 @@ func (a Action) inputs(typeParam string) []string {
 // action does not take.
 func params(a Action, in Input, q url.Values) error {
 	for k, v := range in.Params {
-		if !slices.Contains(a.Query, k) {
-			if len(a.Query) == 0 {
+		if !slices.Contains(a.Params, k) {
+			if len(a.Params) == 0 {
 				return fmt.Errorf("this action takes no params")
 			}
-			return fmt.Errorf("params: %q is not a parameter of this action (takes %s)", k, strings.Join(a.Query, ", "))
+			return fmt.Errorf("params: %q is not a parameter of this action (takes %s)", k, strings.Join(a.Params, ", "))
 		}
 		vs, ok := v.([]any)
 		if !ok {
 			vs = []any{v}
 		}
 		for _, x := range vs {
-			switch x.(type) {
-			case string, float64, bool:
+			switch x := x.(type) {
+			case float64:
+				q.Add(k, strconv.FormatFloat(x, 'f', -1, 64))
+			case string, bool:
 				q.Add(k, fmt.Sprint(x))
 			default:
 				return fmt.Errorf("params: %s must be a string, number, boolean or a list of them", k)
@@ -152,7 +154,7 @@ func (d Deps) call(ctx context.Context, op string, p falcon.Params) (*envelope, 
 
 // read runs one read action.
 func (d Deps) read(ctx context.Context, tool string, a Action, in Input) (map[string]any, error) {
-	if a.Kind != Search && a.Kind != Custom && in.Cursor != "" {
+	if in.Cursor != "" && !slices.Contains(a.inputs(""), "cursor") {
 		return nil, errors.New("cursor does not belong to this query: only search actions page")
 	}
 	if a.NoFilter && (in.Filter != "" || in.Sort != "") {
@@ -255,9 +257,7 @@ func (d Deps) search(ctx context.Context, tool string, a Action, in Input) (map[
 	case Offset:
 		start, _ := strconv.Atoi(pos)
 		end := start + got
-		// A full page whose total equals its end may still have more:
-		// some APIs (AIDR) report offset+len as total.
-		if (pg.Total != nil && (end < *pg.Total || end == *pg.Total && got == limit)) || (pg.Total == nil && got == limit) {
+		if (pg.Total != nil && (end < *pg.Total || a.TotalIsEnd && got == limit)) || (pg.Total == nil && got == limit) {
 			next = strconv.Itoa(end)
 		}
 	case After:

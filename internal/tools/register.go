@@ -2,7 +2,6 @@
 package tools
 
 import (
-	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
@@ -111,7 +110,7 @@ func pick(t Tool, as []Action, in Input) (Action, error) {
 	if t.TypeParam == "" {
 		return named[0], nil
 	}
-	typ := cmp.Or(in.PolicyType, in.ExclusionType)
+	typ := map[string]string{"policy_type": in.PolicyType, "exclusion_type": in.ExclusionType}[t.TypeParam]
 	for _, a := range named {
 		if a.Type == typ {
 			return a, nil

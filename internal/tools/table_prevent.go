@@ -53,7 +53,7 @@ var preventTools = []Tool{
 		Description: "Detection exclusions by exclusion_type: ioa (behavioral pattern), ml (machine learning), sensor_visibility, certificate (code-signing certificate).",
 		Actions: []Action{
 			{Name: "search", Type: "ioa", Help: exclSearchHelp, Kind: Search, Op: "ss_ioa_exclusions_search_v2", Hydrate: "ss_ioa_exclusions_get_v2", Brief: ioaExclBrief, Guide: exclGuide,
-				Query: []string{"ifn_regex", "cl_regex", "parent_ifn_regex", "parent_cl_regex", "grandparent_ifn_regex", "grandparent_cl_regex"}},
+				Params: []string{"ifn_regex", "cl_regex", "parent_ifn_regex", "parent_cl_regex", "grandparent_ifn_regex", "grandparent_cl_regex"}},
 			{Name: "search", Type: "ml", Help: exclSearchHelp, Kind: Search, Op: "exclusions_search_v2", Hydrate: "exclusions_get_v2", Brief: mlExclBrief, Guide: exclGuide},
 			{Name: "search", Type: "sensor_visibility", Help: exclSearchHelp, Kind: Search, Op: "querySensorVisibilityExclusionsV1", Hydrate: "getSensorVisibilityExclusionsV1", Brief: svExclBrief, Guide: exclGuide},
 			{Name: "search", Type: "certificate", Help: exclSearchHelp, Kind: Search, Op: "cb_exclusions_query_v1", Hydrate: "cb_exclusions_get_v1", MaxLimit: 100, Brief: certExclBrief, Guide: exclGuide},
@@ -70,11 +70,11 @@ var preventTools = []Tool{
 		Description: "Falcon Firewall Management rules and rule groups. Firewall policies themselves are falcon_policy with policy_type firewall.",
 		Actions: []Action{
 			{Name: "search_rules", Help: "firewall rules matching filter; params q (free text across string fields). platform is not a rule field.", Kind: Search,
-				Op: "query_rules", Hydrate: "get_rules", Query: []string{"q"}, Brief: fwRuleBrief, Guide: fwGuide},
+				Op: "query_rules", Hydrate: "get_rules", Params: []string{"q"}, Brief: fwRuleBrief, Guide: fwGuide},
 			{Name: "search_rule_groups", Help: "firewall rule groups matching filter; params q (free text).", Kind: Search,
-				Op: "query_rule_groups", Hydrate: "get_rule_groups", Query: []string{"q"}, Brief: fwGroupBrief, Guide: fwGuide},
+				Op: "query_rule_groups", Hydrate: "get_rule_groups", Params: []string{"q"}, Brief: fwGroupBrief, Guide: fwGuide},
 			{Name: "search_policy_rules", Help: "rules in firewall policy id, matching filter; params q (free text).", Kind: Search,
-				Op: "query_policy_rules", Hydrate: "get_rules", Param: "id", Query: []string{"q"}, Brief: fwRuleBrief, Guide: fwGuide},
+				Op: "query_policy_rules", Hydrate: "get_rules", Param: "id", Params: []string{"q"}, Brief: fwRuleBrief, Guide: fwGuide},
 			{Name: "get_rules", Help: "full firewall rules by id (ids).", Kind: Get, Op: "get_rules"},
 			{Name: "get_rule_groups", Help: "full firewall rule groups by id (ids).", Kind: Get, Op: "get_rule_groups"},
 		}},
@@ -82,7 +82,7 @@ var preventTools = []Tool{
 		Description: "Custom Indicator of Attack rule groups and the behavioral rules inside them, plus the platforms and rule types they can use.",
 		Actions: []Action{
 			{Name: "search_rule_groups", Help: "rule groups with their rules, matching filter; sort e.g. modified_on.desc; params q (free text).", Kind: Search,
-				Op: "query_rule_groups_full", Query: []string{"q"}, Brief: ioaGroupBrief, Guide: "falcon://custom-ioa/rule-groups/fql-guide"},
+				Op: "query_rule_groups_full", Params: []string{"q"}, Brief: ioaGroupBrief, Guide: "falcon://custom-ioa/rule-groups/fql-guide"},
 			{Name: "get_platforms", Help: "platforms a rule group can target.", Kind: Search, NoFilter: true,
 				Op: "query_platformsMixin0", Hydrate: "get_platformsMixin0", Brief: []string{"id", "label"}},
 			{Name: "get_rule_types", Help: "rule types with their fields and disposition ids, for building rules.", Kind: Search, NoFilter: true,
@@ -94,7 +94,7 @@ var preventTools = []Tool{
 		Actions: []Action{
 			// ponytail: offset paging stops at 10,000 IOCs (a Falcon limit); past that needs after-paging with hydration.
 			{Name: "search", Help: "IOCs matching filter, e.g. type:'sha256'+expired:false; sort e.g. modified_on.desc; params from_parent (true for MSSP-parent IOCs). Pages to 10,000 results.", Kind: Search,
-				Op: "indicator_search_v1", Hydrate: "indicator_get_v1", Query: []string{"from_parent"}, Brief: iocBrief, Guide: "falcon://ioc/search/fql-guide"},
+				Op: "indicator_search_v1", Hydrate: "indicator_get_v1", Params: []string{"from_parent"}, Brief: iocBrief, Guide: "falcon://ioc/search/fql-guide"},
 			{Name: "get", Help: "full IOCs by id (ids).", Kind: Get, Op: "indicator_get_v1"},
 		}},
 }

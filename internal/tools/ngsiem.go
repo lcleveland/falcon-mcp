@@ -35,6 +35,8 @@ type jobs struct {
 	log *slog.Logger
 	mu  sync.Mutex
 	m   map[string]*job // by job id
+
+	closed bool
 }
 
 func newJobs(c *falcon.Client, log *slog.Logger) *jobs {
@@ -45,6 +47,10 @@ func newJobs(c *falcon.Client, log *slog.Logger) *jobs {
 func (js *jobs) park(j *job) {
 	js.mu.Lock()
 	defer js.mu.Unlock()
+	if js.closed {
+		go js.stop(j)
+		return
+	}
 	if len(js.m) >= maxJobs {
 		var old *job
 		for _, x := range js.m {
@@ -54,13 +60,16 @@ func (js *jobs) park(j *job) {
 		}
 		js.dropLocked(old)
 	}
-	j.timer = time.AfterFunc(jobTTL, func() {
+	var t *time.Timer
+	t = time.AfterFunc(jobTTL, func() {
 		js.mu.Lock()
 		defer js.mu.Unlock()
-		if js.m[j.id] == j {
+		// A stale timer of a job taken and parked again must not drop it.
+		if js.m[j.id] == j && j.timer == t {
 			js.dropLocked(j)
 		}
 	})
+	j.timer = t
 	js.m[j.id] = j
 }
 
@@ -100,6 +109,7 @@ func (js *jobs) Close() {
 		all = append(all, j)
 	}
 	clear(js.m)
+	js.closed = true
 	js.mu.Unlock()
 	var wg sync.WaitGroup
 	for _, j := range all {

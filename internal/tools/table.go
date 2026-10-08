@@ -7,7 +7,8 @@ import (
 )
 
 // Tool is one tool: a set of actions over Falcon operations. Adding an
-// operation is adding an Action; there is no per-action handler code.
+// operation is adding an Action; only Custom actions (NGSIEM, GraphQL)
+// carry handler code.
 type Tool struct {
 	Name        string // falcon_<area>
 	Group       string
@@ -42,11 +43,14 @@ type Action struct {
 	// search and to Op for a get.
 	IDs string
 
-	Param    string              // query parameter filled from the id input, e.g. a host group id
-	TakesIDs bool                // an aggregate that also takes ids
-	Query    []string            // named query parameters taken from the params input, for APIs without FQL
-	NoFilter bool                // the op takes no FQL filter or sort
-	Set      map[string][]string // query parameters a search always sends, e.g. Spotlight facets
+	Param    string   // query parameter filled from the id input, e.g. a host group id
+	TakesIDs bool     // an aggregate that also takes ids
+	Params   []string // named query parameters taken from the params input, for APIs without FQL
+	NoFilter bool     // the op takes no FQL filter or sort
+	// TotalIsEnd: the API reports offset+len as total (AIDR), so a full
+	// page may have more after it.
+	TotalIsEnd bool
+	Set        map[string][]string // query parameters a search always sends, e.g. Spotlight facets
 
 	// Custom: the handler, and the inputs it reads beyond action and fields.
 	Run    func(context.Context, Deps, Input) (map[string]any, error)

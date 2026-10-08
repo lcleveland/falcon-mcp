@@ -309,3 +309,33 @@ func TestNGSIEMShutdownStopsJobs(t *testing.T) {
 		t.Errorf("stopped = %v", s)
 	}
 }
+
+func TestReviewFixes(t *testing.T) {
+	var got []request
+	body := `{"meta":{"pagination":{"offset":0,"limit":2,"total":2}},"resources":[{"Id":"a"},{"Id":"b"}]}`
+	cs := sessionWith(t, &config.Config{}, nil, http.StatusCreated, func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, request{Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery})
+		io.WriteString(w, body)
+	})
+	// Big numbers go out as integers, not 1e+12.
+	callTool(t, cs, "falcon_guardian", map[string]any{"action": "get_process_tree", "ids": []string{"s"}, "params": map[string]any{"depth": 1759312800000.0}})
+	if q := query(t, got[0].Query); q.Get("depth") != "1759312800000" {
+		t.Errorf("depth = %q", q.Get("depth"))
+	}
+	// AIDR reports offset+len as total: a full page still pages on.
+	out, _, _ := callTool(t, cs, "falcon_guardian", map[string]any{"action": "search_agents", "limit": 2})
+	if out["next_cursor"] == nil {
+		t.Errorf("AIDR full page has no cursor: %v", out)
+	}
+	// Other APIs trust total.
+	out, _, _ = callTool(t, cs, "falcon_host_group", map[string]any{"action": "search", "limit": 2})
+	if out["next_cursor"] != nil {
+		t.Errorf("total reached but cursor given: %v", out)
+	}
+	if _, isErr, text := callTool(t, cs, "falcon_policy", map[string]any{"action": "search", "exclusion_type": "ioa"}); !isErr || !strings.Contains(text, "exclusion_type") {
+		t.Errorf("wrong type field: %s", text)
+	}
+	if _, isErr, text := callTool(t, cs, "falcon_identity", map[string]any{"action": "investigate_entity", "query": "{a}", "cursor": "x"}); !isErr || !strings.Contains(text, "cursor") {
+		t.Errorf("cursor on identity: %s", text)
+	}
+}
