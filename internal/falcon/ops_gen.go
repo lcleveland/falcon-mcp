@@ -48,7 +48,6 @@ var ops = map[string]Op{
 	"InvokePublishedAgentExternalV1":             {"POST", "/agentic-studio/entities/agent-invocations/v1", "Charlotte AI Agent Definition:write", true},
 	"ListCloudGroupsByIDExternal":                {"GET", "/cloud-security/entities/cloud-groups/v1", "Cloud Groups V2:read", false},
 	"ListCloudGroupsExternal":                    {"GET", "/cloud-security/combined/cloud-groups/v1", "Cloud Groups V2:read", false},
-	"ListSavedQueries":                           {"GET", "/ngsiem-content/queries/savedqueries/v1", "NGSIEM:read", false},
 	"PatchEntitiesAlertsV3":                      {"PATCH", "/alerts/entities/alerts/v3", "Alerts:write", true},
 	"PerformActionV2":                            {"POST", "/devices/entities/devices-actions/v2", "Hosts:write", true},
 	"PostAggregatesAlertsV2":                     {"POST", "/alerts/aggregates/alerts/v2", "Alerts:read", false},
