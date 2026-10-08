@@ -2,7 +2,7 @@
 
 An MCP server for the [CrowdStrike Falcon](https://www.crowdstrike.com/) REST API, written in Go. It serves over stdio or streamable HTTP and is packaged as a Nix flake with a NixOS module.
 
-The server is read-only by default. Writes are turned on per **capability** (triage, containment, RTR, ...), every write needs a reason that goes to the audit log, and some operations are never exposed at all: RTR admin commands and runscript, permanent host deletion, revealing uninstall tokens or turning off uninstall protection, and user, API-client and installation-token administration.
+The server is read-only by default. Writes are turned on per **capability** (triage, containment, RTR, ...), every write needs a reason that goes to the audit log, and some writes are never exposed at all: RTR admin commands and runscript, batch RTR responder commands, quarantine changes selected by query, permanent host deletion, revealing uninstall tokens or turning off uninstall protection, and user, API-client and installation-token administration.
 
 ## Tools
 
@@ -18,37 +18,39 @@ The server is read-only by default. Writes are turned on per **capability** (tri
 | identity | `falcon_identity` (Identity Protection GraphQL, queries only) |
 | ai | `falcon_guardian` (AIDR: AI agents seen on hosts), `falcon_agentworks` (Charlotte AI AgentWorks) |
 
-Every tool takes an `action`; each tool's description lists its actions and what they take. The read actions are:
+Every tool takes an `action`; each tool's description lists its actions and what they take. A write action exists only while its capability is on:
 
-| Tool | Read actions |
-|---|---|
-| `falcon_alert` | search, get, aggregate |
-| `falcon_case` | search, get, list_templates, aggregate_slas, aggregate_templates, aggregate_access_tags, aggregate_notification_groups, aggregate_file_details |
-| `falcon_rtr` | search_sessions, search_audit_sessions, aggregate_sessions, get_session |
-| `falcon_quarantine` | search, get, preview_actions |
-| `falcon_host` | search, get |
-| `falcon_host_group` | search, search_members |
-| `falcon_discover` | search_applications, search_unmanaged_assets, search_managed_assets |
-| `falcon_zta` | search, get, get_audit |
-| `falcon_sensor_usage` | search_weekly |
-| `falcon_policy` | search, get, search_members |
-| `falcon_exclusion` | search, get, get_certificate_details |
-| `falcon_firewall` | search_rules, search_rule_groups, search_policy_rules, get_rules, get_rule_groups |
-| `falcon_custom_ioa` | search_rule_groups, get_platforms, get_rule_types, get_rule_type |
-| `falcon_ioc` | search, get |
-| `falcon_intel` | search_actors, search_indicators, search_reports, get_mitre_report |
-| `falcon_recon` | search_notifications, get_notifications, search_rules, get_rules, search_exposed_data_records, get_exposed_data_records, aggregate_notifications, aggregate_exposed_data_records, preview_rule |
-| `falcon_ngsiem` | search |
-| `falcon_correlation_rule` | search |
-| `falcon_workflow` | search_definitions, search_executions, get_execution_results |
-| `falcon_report` | search, get, search_executions, get_executions, download_execution |
-| `falcon_vulnerability` | search, search_serverless |
-| `falcon_cloud` | search_cspm_assets, search_kubernetes_containers, count_kubernetes_containers, search_images_vulnerabilities, search_insights, get_asset_insights, list_insight_definitions, search_iom_findings, search_suppression_rules, search_risks, search_groups, get_groups |
-| `falcon_shield` | search_checks, get_check_affected_entities, get_posture_metrics, get_check_compliance, search_alerts, get_activity_monitor, search_users, search_devices, search_apps, get_app_users, search_data_shares, get_integrations, get_system_users, get_supported_saas, get_system_logs |
-| `falcon_data_protection` | search_classifications, search_policies, search_content_patterns |
-| `falcon_identity` | investigate_entity |
-| `falcon_guardian` | search_, get_ and aggregate_ actions over agents, sessions, tools, skills, OS users, MCP servers, installs, models, executions, tool and skill usage, prompts and detections, plus get_session_activity, get_process_tree, get_network_events, get_file_events, get_classified_file_access |
-| `falcon_agentworks` | search_agents, get_agents, search_agent_versions, get_agent_versions, search_spans, get_spans, get_invocation |
+| Tool | Read actions | Write actions (capability) |
+|---|---|---|
+| `falcon_status` | check (the default), guide | |
+| `falcon_api` | any GET, by `op` or `method` and `path` | see below |
+| `falcon_alert` | search, get, aggregate | update (triage) |
+| `falcon_case` | search, get, list_templates, aggregate_slas, aggregate_templates, aggregate_access_tags, aggregate_notification_groups, aggregate_file_details | create, update, add_alert_evidence, add_event_evidence, add_tags, remove_tags (triage) |
+| `falcon_rtr` | search_sessions, search_audit_sessions, aggregate_sessions, get_session | init_session, pulse_session, delete_session, run_command, check_command_status, list_files, init_batch, pulse_batch, run_batch_command (rtr-read); run_responder_command, check_responder_status (rtr-respond) |
+| `falcon_quarantine` | search, get, preview_actions | release, unrelease (detection-remove); delete (destructive) |
+| `falcon_host` | search, get | add_tags, remove_tags (host-tags); contain, lift_containment (containment); suppress_detections, unsuppress_detections (detection-remove); hide_host, unhide_host (destructive) |
+| `falcon_host_group` | search, search_members | create, update, delete, add_hosts, remove_hosts (fleet-config) |
+| `falcon_discover` | search_applications, search_unmanaged_assets, search_managed_assets |  |
+| `falcon_zta` | search, get, get_audit |  |
+| `falcon_sensor_usage` | search_weekly |  |
+| `falcon_policy` | search, get, search_members | create, update, delete, perform, set_precedence (fleet-config) |
+| `falcon_exclusion` | search, get, get_certificate_details | create, update, delete (detection-remove) |
+| `falcon_firewall` | search_rules, search_rule_groups, search_policy_rules, get_rules, get_rule_groups | create_rule_group, update_rule_group, delete_rule_groups (fleet-config) |
+| `falcon_custom_ioa` | search_rule_groups, get_platforms, get_rule_types, get_rule_type | create_rule_group, create_rule, enable_rule_group, enable_rules (detection-add); disable_rule_group, disable_rules, delete_rule_groups, delete_rules (detection-remove) |
+| `falcon_ioc` | search, get | create, update (detection-add); create_allow, update_allow, delete (detection-remove) |
+| `falcon_intel` | search_actors, search_indicators, search_reports, get_mitre_report |  |
+| `falcon_recon` | search_notifications, get_notifications, search_rules, get_rules, search_exposed_data_records, get_exposed_data_records, aggregate_notifications, aggregate_exposed_data_records, preview_rule |  |
+| `falcon_ngsiem` | search |  |
+| `falcon_correlation_rule` | search |  |
+| `falcon_workflow` | search_definitions, search_executions, get_execution_results | execute (workflows) |
+| `falcon_report` | search, get, search_executions, get_executions, download_execution | launch (workflows) |
+| `falcon_vulnerability` | search, search_serverless |  |
+| `falcon_cloud` | search_cspm_assets, search_kubernetes_containers, count_kubernetes_containers, search_images_vulnerabilities, search_insights, get_asset_insights, list_insight_definitions, search_iom_findings, search_suppression_rules, search_risks, search_groups, get_groups |  |
+| `falcon_shield` | search_checks, get_check_affected_entities, get_posture_metrics, get_check_compliance, search_alerts, get_activity_monitor, search_users, search_devices, search_apps, get_app_users, search_data_shares, get_integrations, get_system_users, get_supported_saas, get_system_logs |  |
+| `falcon_data_protection` | search_classifications, search_policies, search_content_patterns |  |
+| `falcon_identity` | investigate_entity |  |
+| `falcon_guardian` | search_, get_ and aggregate_ actions over agents, sessions, tools, skills, OS users, MCP servers, installs, models, executions, tool and skill usage, prompts and detections, plus get_session_activity, get_process_tree, get_network_events, get_file_events, get_classified_file_access |  |
+| `falcon_agentworks` | search_agents, get_agents, search_agent_versions, get_agent_versions, search_spans, get_spans, get_invocation |  |
 
 Searches:
 - take an FQL `filter` and `sort`, and return a brief field set unless you pass `fields`;
@@ -77,9 +79,9 @@ All are off by default. A disabled capability's actions are removed from the too
 | `--allow-workflows` | `falcon_workflow` execute, `falcon_report` launch; through `falcon_api`, invoking an AgentWorks agent |
 
 **Write safety:**
-- Every write requires `reason`. It goes to the audit log (with the tool, action, capability, target ids and Falcon's trace ID) before the call is sent and again with the outcome. Where Falcon has a comment or note field, the reason goes there too: alert comments, the note on containment and detection suppression, and the comment on quarantine, custom IOA, IOC and exclusion writes. RTR has no comment field, so there it is audit-logged only.
+- Every write requires `reason`. It goes to the audit log (with the tool, action, capability, target ids and Falcon's trace ID) before the call is sent and again with the outcome. Where Falcon has a comment or note field, the reason goes there too: alert comments, the note on containment and detection suppression, and the comment on quarantine, custom IOA, IOC, exclusion and firewall rule-group writes. Elsewhere (RTR, cases, workflow and report runs) it is audit-logged only.
 - A write touches at most `--max-bulk` records (1000), or Falcon's own per-call limit when that is lower.
-- Writes that act on records take `ids`, or a `filter`. A filter is first resolved to ids with reads only; if it matches nothing, or more than the limit, nothing is sent. Otherwise the reply says how many records it matches, and the write runs only when repeated with `confirm` equal to that count.
+- Writes that act on records take `ids`; some (alert updates, for one) take a `filter` instead. A filter is first resolved to ids with reads only; if it matches nothing, or more than the limit, nothing is sent. Otherwise the reply says how many records it matches, and the write runs only when repeated with `confirm` equal to that count.
 - Host actions (contain, lift containment, suppress detections, hide and unhide, RTR responder commands) take exactly one device id and need `confirm` equal to that host's hostname. A mismatch fails before anything is sent.
 - Writes are never retried automatically. Falcon takes no idempotency keys, so a retried write could happen twice.
 
@@ -241,7 +243,7 @@ Add flags after `falcon-mcp`, e.g. `-- falcon-mcp --allow-triage --tool-groups r
 ## Compared with other Falcon MCP servers
 
 **[CrowdStrike/falcon-mcp](https://github.com/CrowdStrike/falcon-mcp)**, the official open-source server, is the reference for coverage: this server covers the same modules and serves the same guides.
-- It registers about 170 tools, one per operation; this one has one tool per area with an `action`, so a client loads a few dozen schemas.
+- It registers one tool per operation; this one has one tool per area with an `action`, so a client loads a few dozen schemas.
 - Its writes are on unless you pass `--read-only`, and are gated by module. Here writes are off and gated by capability, which separates, say, adding a detection from removing one.
 - It has no reason, audit log, bulk cap, filter confirmation or hostname confirmation on writes.
 - It does not probe: a missing scope shows up as a 403 when a tool is called. Here those actions are hidden.
