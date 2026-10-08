@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"strconv"
 	"strings"
@@ -18,6 +19,10 @@ type WriteCall struct {
 	Targets []string   // the ids the write acts on (TargetIDs, TargetHost)
 	Reason  string     // trimmed, never empty
 	Values  url.Values // the params input, checked against Action.Params
+
+	// get runs a read, for a write that must send back state it has not
+	// been given (a version, the rest of a record).
+	get func(op string, p falcon.Params) (*envelope, error)
 }
 
 // sender builds a write's call from a checked WriteCall.
@@ -33,7 +38,8 @@ func (d Deps) write(ctx context.Context, tool string, a Action, in Input) (map[s
 	if !d.Config.Allow[a.Capability] {
 		return nil, fmt.Errorf("the %s capability is disabled by the operator", a.Capability)
 	}
-	w := WriteCall{Input: in, Reason: strings.TrimSpace(in.Reason), Values: url.Values{}}
+	w := WriteCall{Input: in, Reason: strings.TrimSpace(in.Reason), Values: url.Values{},
+		get: func(op string, p falcon.Params) (*envelope, error) { return d.call(ctx, op, p) }}
 	if w.Reason == "" {
 		return nil, errors.New("reason is required for writes; say why, it is recorded in the audit log")
 	}
@@ -191,4 +197,46 @@ func object(body any) (map[string]any, error) {
 		return nil, errors.New("this action needs body, an object of the fields to set")
 	}
 	return m, nil
+}
+
+// queryIDs caps writes that send ids in the query string, which Falcon
+// bounds only by URL length.
+const queryIDs = 100
+
+// entity sends the body input as one record: with the reason as its
+// comment when comment, the id input as its id when withID, and wrapped as
+// {key: [record]} when key is set.
+func entity(key string, withID, comment bool) sender {
+	return func(w WriteCall) (falcon.Params, error) {
+		b, err := object(w.Body)
+		if err != nil {
+			return falcon.Params{}, err
+		}
+		b = maps.Clone(b)
+		if withID {
+			if w.ID == "" {
+				return falcon.Params{}, errors.New("this action needs id, the id of the record to update")
+			}
+			b["id"] = w.ID
+		}
+		if comment {
+			b["comment"] = w.Reason
+		}
+		if key == "" {
+			return falcon.Params{Body: b}, nil
+		}
+		return falcon.Params{Body: map[string]any{key: []any{b}}}, nil
+	}
+}
+
+// deleteIDs deletes the targets by ids in the query, with the reason as
+// the comment when the API takes one.
+func deleteIDs(comment bool) sender {
+	return func(w WriteCall) (falcon.Params, error) {
+		q := url.Values{"ids": w.Targets}
+		if comment {
+			q.Set("comment", w.Reason)
+		}
+		return falcon.Params{Query: q}, nil
+	}
 }

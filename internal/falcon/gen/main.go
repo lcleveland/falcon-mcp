@@ -39,6 +39,8 @@ const (
 var extra = map[string]string{
 	"PerformActionV2":                       "Hosts:write",
 	"indicator_update_v1":                   "IOC Management:write",
+	"update_rule_group":                     "Firewall Management:write",
+	"get_rule_groupsMixin0":                 "Custom IOA Rules:read",
 	"BatchInitSessions":                     "Real time response:read",
 	"BatchRefreshSessions":                  "Real time response:read",
 	"BatchCmd":                              "Real time response:read",

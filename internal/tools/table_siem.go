@@ -1,5 +1,11 @@
 package tools
 
+import (
+	"errors"
+
+	"github.com/lcleveland/falcon-mcp/internal/falcon"
+)
+
 var (
 	correlationRuleBrief = []string{"id", "rule_id", "name", "status", "state", "severity", "tactic", "technique", "created_on", "last_updated_on"}
 	workflowDefBrief     = []string{"id", "name", "enabled", "version", "trigger.type", "trigger.name", "has_validation_errors", "last_modified_timestamp"}
@@ -33,6 +39,9 @@ var siemTools = []Tool{
 				Op: "WorkflowExecutionsCombined", Params: []string{"skip_fields"}, Brief: workflowExecBrief, Guide: "falcon://fusion/workflow-executions/fql-guide"},
 			{Name: "get_execution_results", Help: "one execution with every activity's result (ids: one execution id); params skip_fields (comma-joined) to shrink it.", Kind: Get,
 				Op: "WorkflowExecutionResults", IDs: "one:ids", Params: []string{"skip_fields"}},
+			{Name: "execute", Help: "run an on-demand workflow; params definition_id or name, and key (deduplicates runs); body is the trigger input the workflow expects. " +
+				"It does whatever the workflow does, which may include containment. Workflows have no comment field: the reason is audit-logged only.",
+				Kind: Write, Capability: "workflows", Op: "WorkflowExecute", Inputs: []string{"body"}, Params: []string{"definition_id", "name", "key"}, Send: workflowExecute},
 		}},
 	{Name: "falcon_report", Group: "siem", Title: "Scheduled reports",
 		Description: "Scheduled reports and scheduled searches, and their executions. Launching a report is a separate, opt-in capability.",
@@ -45,5 +54,25 @@ var siemTools = []Tool{
 			{Name: "get_executions", Help: "full report executions by id (ids).", Kind: Get, Op: "report_executions_get"},
 			{Name: "download_execution", Help: "the results of one DONE execution (ids: one execution id), as JSON or CSV text; PDF reports are refused.", Kind: Get,
 				Op: "report_executions_download_get", IDs: "one:ids"},
+			{Name: "launch", Help: "run scheduled report id now; the reason is audit-logged only.",
+				Kind: Write, Capability: "workflows", Op: "scheduled_reports_launch", Inputs: []string{"id"}, Send: reportLaunch},
 		}},
+}
+
+func workflowExecute(w WriteCall) (falcon.Params, error) {
+	if w.Values.Get("definition_id") == "" && w.Values.Get("name") == "" {
+		return falcon.Params{}, errors.New("this action needs params definition_id or name, the workflow to run")
+	}
+	body := w.Body
+	if body == nil {
+		body = map[string]any{}
+	}
+	return falcon.Params{Query: w.Values, Body: body}, nil
+}
+
+func reportLaunch(w WriteCall) (falcon.Params, error) {
+	if w.ID == "" {
+		return falcon.Params{}, errors.New("this action needs id, the scheduled report id")
+	}
+	return falcon.Params{Body: []map[string]string{{"id": w.ID}}}, nil
 }

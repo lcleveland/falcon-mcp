@@ -32,6 +32,14 @@ var hostsTools = []Tool{
 				Kind: Write, Capability: "containment", Op: "PerformActionV2", Target: TargetHost, Send: hostAction("contain")},
 			{Name: "lift_containment", Help: "lift network containment from one host by device id (id), with confirm=<its hostname>. The reason is sent as the action's note.",
 				Kind: Write, Capability: "containment", Op: "PerformActionV2", Target: TargetHost, Send: hostAction("lift_containment")},
+			{Name: "suppress_detections", Help: "stop reporting detections from one host by device id (id), with confirm=<its hostname>. The reason is sent as the action's note.",
+				Kind: Write, Capability: "detection-remove", Op: "PerformActionV2", Target: TargetHost, Send: hostAction("detection_suppress")},
+			{Name: "unsuppress_detections", Help: "resume reporting detections from one host by device id (id), with confirm=<its hostname>.",
+				Kind: Write, Capability: "detection-remove", Op: "PerformActionV2", Target: TargetHost, Send: hostAction("detection_unsuppress")},
+			{Name: "hide_host", Help: "hide one host by device id (id), with confirm=<its hostname>: it leaves the console and no new detections from it are reported. unhide_host undoes it.",
+				Kind: Write, Capability: "destructive", Op: "PerformActionV2", Target: TargetHost, Send: hostAction("hide_host")},
+			{Name: "unhide_host", Help: "restore one hidden host by device id (id), with confirm=<its hostname>.",
+				Kind: Write, Capability: "destructive", Op: "PerformActionV2", Target: TargetHost, Send: hostAction("unhide_host")},
 		}},
 	{Name: "falcon_host_group", Group: "hosts", Title: "Host groups",
 		Description: "Host groups, which policies are assigned to, and their members.",
@@ -41,6 +49,16 @@ var hostsTools = []Tool{
 				Guide: "falcon://host-groups/search/fql-guide"},
 			{Name: "search_members", Help: "hosts in host group id, matching filter.", Kind: Search, Op: "queryCombinedGroupMembers",
 				Param: "id", Brief: hostBrief, Guide: "falcon://hosts/search/fql-guide"},
+			{Name: "create", Help: "create a host group; body {name, group_type (static|dynamic|staticByID), description, assignment_rule (FQL, dynamic groups)}.",
+				Kind: Write, Capability: "fleet-config", Op: "createHostGroups", Inputs: []string{"body"}, Send: entity("resources", false, false)},
+			{Name: "update", Help: "update host group id; body is the fields to set {name, description, assignment_rule}. A new assignment_rule can move many hosts, and their policies, at once.",
+				Kind: Write, Capability: "fleet-config", Op: "updateHostGroups", Inputs: []string{"id", "body"}, Send: entity("resources", true, false)},
+			{Name: "delete", Help: "delete host groups by id (ids); their hosts lose the policies assigned through them.",
+				Kind: Write, Capability: "fleet-config", Op: "deleteHostGroups", Target: TargetIDs, MaxIDs: queryIDs, Send: deleteIDs(false)},
+			{Name: "add_hosts", Help: "add hosts by device id (ids; find them with falcon_host search) to static host group id.",
+				Kind: Write, Capability: "fleet-config", Op: "performGroupAction", Target: TargetIDs, Inputs: []string{"id"}, Send: groupMembers("add-hosts")},
+			{Name: "remove_hosts", Help: "remove hosts by device id (ids; find them with falcon_host search) from static host group id.",
+				Kind: Write, Capability: "fleet-config", Op: "performGroupAction", Target: TargetIDs, Inputs: []string{"id"}, Send: groupMembers("remove-hosts")},
 		}},
 	{Name: "falcon_discover", Group: "hosts", Title: "Asset inventory",
 		Description: "Falcon Discover: applications and assets found across the network, including hosts without a sensor.",
@@ -124,4 +142,32 @@ func hostAction(name string) sender {
 		return falcon.Params{Query: url.Values{"action_name": {name}}, Body: map[string]any{
 			"ids": w.Targets, "action_parameters": []map[string]string{{"name": "note", "value": w.Reason}}}}, nil
 	}
+}
+
+// groupMembers adds or removes hosts by device id. The API takes them as a
+// host filter, so ids are checked to keep them from widening it.
+func groupMembers(action string) sender {
+	return func(w WriteCall) (falcon.Params, error) {
+		if w.ID == "" {
+			return falcon.Params{}, errors.New("this action needs id, the host group id")
+		}
+		quoted := make([]string, len(w.Targets))
+		for i, id := range w.Targets {
+			if !plainID(id) {
+				return falcon.Params{}, fmt.Errorf("%q is not a device id", id)
+			}
+			quoted[i] = "'" + id + "'"
+		}
+		return falcon.Params{Query: url.Values{"action_name": {action}}, Body: map[string]any{
+			"ids":               []string{w.ID},
+			"action_parameters": []map[string]string{{"name": "filter", "value": "device_id:[" + strings.Join(quoted, ",") + "]"}},
+		}}, nil
+	}
+}
+
+// plainID reports whether id has only the characters Falcon ids use.
+func plainID(id string) bool {
+	return id != "" && strings.IndexFunc(id, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_')
+	}) < 0
 }

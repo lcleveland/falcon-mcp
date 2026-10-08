@@ -185,6 +185,7 @@ var ops = map[string]Op{
 	"getSensorVisibilityExclusionsV1":            {"GET", "/policy/entities/sv-exclusions/v1", "Sensor Visibility Exclusions:read", false},
 	"get_platformsMixin0":                        {"GET", "/ioarules/entities/platforms/v1", "Custom IOA Rules:read", false},
 	"get_rule_groups":                            {"GET", "/fwmgr/entities/rule-groups/v1", "Firewall Management:read", false},
+	"get_rule_groupsMixin0":                      {"GET", "/ioarules/entities/rule-groups/v1", "Custom IOA Rules:read", false},
 	"get_rule_types":                             {"GET", "/ioarules/entities/rule-types/v1", "Custom IOA Rules:read", false},
 	"get_rules":                                  {"GET", "/fwmgr/entities/rules/v1", "Firewall Management:read", false},
 	"indicator_create_v1":                        {"POST", "/iocs/entities/indicators/v1", "IOC Management:write", true},
@@ -272,6 +273,7 @@ var ops = map[string]Op{
 	"updateRTResponsePolicies":                   {"PATCH", "/policy/entities/response/v1", "Response Policies:write", true},
 	"updateSensorUpdatePoliciesV2":               {"PATCH", "/policy/entities/sensor-update/v2", "Sensor Update Policies:write", true},
 	"updateSensorVisibilityExclusionsV1":         {"PATCH", "/policy/entities/sv-exclusions/v1", "Sensor Visibility Exclusions:write", true},
+	"update_rule_group":                          {"PATCH", "/fwmgr/entities/rule-groups/v1", "Firewall Management:write", true},
 	"update_rule_groupMixin0":                    {"PATCH", "/ioarules/entities/rule-groups/v1", "Custom IOA Rules:write", true},
 	"update_rules_v2":                            {"PATCH", "/ioarules/entities/rules/v2", "Custom IOA Rules:write", true},
 }

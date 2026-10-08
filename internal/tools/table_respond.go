@@ -84,6 +84,15 @@ var respondTools = []Tool{
 			{Name: "get", Help: "full quarantined files by id (ids).", Kind: Get, Op: "GetQuarantineFiles", IDs: "body:ids"},
 			{Name: "preview_actions", Help: "how many files a release, unrelease or delete by filter would touch; filter required.", Kind: Aggregate,
 				Op: "ActionUpdateCount", Guide: "falcon://quarantine/files/search/fql-guide"},
+			{Name: "release", Help: "put quarantined files back on their hosts and allow them to run, by id (ids), or by filter with confirm=<count>. The reason is sent as the comment.",
+				Kind: Write, Capability: "detection-remove", Op: "UpdateQuarantinedDetectsByIds", Target: TargetIDs, Resolve: "QueryQuarantineFiles",
+				Guide: "falcon://quarantine/files/search/fql-guide", Send: quarantine("release")},
+			{Name: "unrelease", Help: "quarantine released files again, by id (ids), or by filter with confirm=<count>. The reason is sent as the comment.",
+				Kind: Write, Capability: "detection-remove", Op: "UpdateQuarantinedDetectsByIds", Target: TargetIDs, Resolve: "QueryQuarantineFiles",
+				Guide: "falcon://quarantine/files/search/fql-guide", Send: quarantine("unrelease")},
+			{Name: "delete", Help: "delete quarantined files for good, by id (ids), or by filter with confirm=<count>. Cannot be undone. The reason is sent as the comment.",
+				Kind: Write, Capability: "destructive", Op: "UpdateQuarantinedDetectsByIds", Target: TargetIDs, Resolve: "QueryQuarantineFiles",
+				Guide: "falcon://quarantine/files/search/fql-guide", Send: quarantine("delete")},
 		}},
 }
 
@@ -152,3 +161,9 @@ func caseTags(add bool) sender {
 }
 
 var errNeedsCase = errors.New("this action needs id, the case id")
+
+func quarantine(action string) sender {
+	return func(w WriteCall) (falcon.Params, error) {
+		return falcon.Params{Body: map[string]any{"action": action, "ids": w.Targets, "comment": w.Reason}}, nil
+	}
+}

@@ -38,7 +38,7 @@ type Input struct {
 	Cursor string   `json:"cursor,omitempty" jsonschema:"next_cursor from the previous call with the same query, unchanged"`
 	IDs    []string `json:"ids,omitempty" jsonschema:"ids to fetch"`
 	ID     string   `json:"id,omitempty" jsonschema:"the one id the action is scoped to"`
-	Body   any      `json:"body,omitempty" jsonschema:"aggregation request body"`
+	Body   any      `json:"body,omitempty" jsonschema:"request body: an aggregation request, or for a write the record or fields it sends; the action help gives the shape"`
 
 	PolicyType    string         `json:"policy_type,omitempty" jsonschema:"which kind of policy; the tool description lists the types per action"`
 	ExclusionType string         `json:"exclusion_type,omitempty" jsonschema:"which kind of exclusion; the tool description lists the types per action"`
