@@ -142,14 +142,17 @@ func writeGuides() {
 	if err := json.Unmarshal(out, &guides); err != nil {
 		log.Fatal(err)
 	}
-	if len(guides) < 50 {
+	if len(guides) < 50 { // upstream had 54 at the pin
 		log.Fatalf("only %d guides extracted; has falcon_mcp/resources changed?", len(guides))
 	}
 
 	const dir = "../../guides"
+	// Stale guides would be embedded, so clear them first.
 	old, _ := filepath.Glob(filepath.Join(dir, "*.md"))
 	for _, f := range old {
-		os.Remove(f)
+		if err := os.Remove(f); err != nil {
+			log.Fatal(err)
+		}
 	}
 	for uri, text := range guides {
 		name, ok := strings.CutPrefix(uri, "falcon://")

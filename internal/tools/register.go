@@ -82,14 +82,13 @@ func registerTool(s *mcp.Server, d Deps, t Tool, as []Action) error {
 	if f := schema.Properties["filter"]; f != nil {
 		var gs []string
 		for _, a := range as {
-			if slices.Contains(a.inputs(t.TypeParam), "filter") && a.Guide != "" && !slices.Contains(gs, a.Guide) {
-				gs = append(gs, a.Guide)
+			if g := a.Name + ": " + a.Guide; slices.Contains(a.inputs(t.TypeParam), "filter") && a.Guide != "" && !slices.Contains(gs, g) {
+				gs = append(gs, g)
 			}
 		}
+		f.Description = "FQL filter; the action's help gives examples"
 		if len(gs) > 0 {
-			f.Description = "FQL filter; read the action's guide before writing one: " + strings.Join(gs, ", ")
-		} else {
-			f.Description = "FQL filter; the action's help gives examples"
+			f.Description += ". Read the guide before writing one: " + strings.Join(gs, "; ")
 		}
 	}
 
