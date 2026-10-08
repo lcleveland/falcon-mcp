@@ -24,7 +24,9 @@ func New(cfg *config.Config, c *falcon.Client, probes *falcon.Probes, log *slog.
 
 func instructions(c *falcon.Client) string {
 	return "Tools for the CrowdStrike Falcon tenant at " + c.BaseURL() + ".\n\n" +
-		"Call falcon_status first if anything fails: it separates rejected credentials from a missing scope."
+		"Call falcon_status first if anything fails: it separates rejected credentials from a missing scope.\n\n" +
+		"Before writing an FQL filter or a CQL query, read the action's guide: the falcon:// resource the tool names, " +
+		"or falcon_status action=guide name=<guide>. Falcon rejects or silently misreads filters on fields it does not know."
 }
 
 // Probe runs the startup scope probe. Credentials the token endpoint refuses

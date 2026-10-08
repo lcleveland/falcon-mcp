@@ -1,15 +1,19 @@
-// Command gen writes ../ops_gen.go, the Falcon operation table.
+// Command gen writes ../ops_gen.go, the Falcon operation table, and
+// ../../guides, the query guides.
 //
-// Routes come from FalconPy's endpoint tables and scopes from the official
-// falcon-mcp server's API_SCOPE_REQUIREMENTS, both at pinned commits fetched
-// over the network. Run it by hand (go generate ./internal/falcon) when
-// bumping a pin or adding operations; the Nix build never runs it.
+// Routes come from FalconPy's endpoint tables, and scopes and guides from the
+// official falcon-mcp server, both at pinned commits fetched over the
+// network. Run it by hand (go generate ./internal/falcon) when bumping a pin
+// or adding operations; the Nix build never runs it. The guides need python3
+// (standard library only).
 package main
 
 import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	_ "embed"
+	"encoding/json"
 	"fmt"
 	"go/format"
 	"io"
@@ -17,7 +21,9 @@ import (
 	"maps"
 	"net/http"
 	"os"
+	"os/exec"
 	"path"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -109,6 +115,92 @@ func main() {
 		log.Fatal(err)
 	}
 	log.Printf("wrote %d ops", len(scopes))
+	writeGuides()
+}
+
+//go:embed guides.py
+var guidesPy []byte
+
+// writeGuides replaces ../../guides/*.md with upstream's guides, one file per
+// falcon:// URI, and copies upstream's licence beside them.
+func writeGuides() {
+	src, err := os.MkdirTemp("", "falcon-mcp-upstream")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer os.RemoveAll(src)
+	untar(fetch("https://codeload.github.com/CrowdStrike/falcon-mcp/tar.gz/"+upstreamRev), src)
+
+	cmd := exec.Command("python3", "-", src)
+	cmd.Stdin = bytes.NewReader(guidesPy)
+	cmd.Stderr = os.Stderr
+	out, err := cmd.Output()
+	if err != nil {
+		log.Fatalf("extracting guides: %v", err)
+	}
+	var guides map[string]string
+	if err := json.Unmarshal(out, &guides); err != nil {
+		log.Fatal(err)
+	}
+	if len(guides) < 50 {
+		log.Fatalf("only %d guides extracted; has falcon_mcp/resources changed?", len(guides))
+	}
+
+	const dir = "../../guides"
+	old, _ := filepath.Glob(filepath.Join(dir, "*.md"))
+	for _, f := range old {
+		os.Remove(f)
+	}
+	for uri, text := range guides {
+		name, ok := strings.CutPrefix(uri, "falcon://")
+		if !ok || strings.Contains(name, ".") {
+			log.Fatalf("unexpected guide URI %q", uri)
+		}
+		write(filepath.Join(dir, strings.ReplaceAll(name, "/", ".")+".md"), []byte(text))
+	}
+	lic, err := os.ReadFile(filepath.Join(src, "LICENSE"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	write(filepath.Join(dir, "LICENSE"), append([]byte("Guides extracted from CrowdStrike/falcon-mcp "+upstreamRev+".\n\n"), lic...))
+	log.Printf("wrote %d guides", len(guides))
+}
+
+// untar unpacks a GitHub tarball into dir, dropping its top-level folder.
+func untar(tgz []byte, dir string) {
+	gz, err := gzip.NewReader(bytes.NewReader(tgz))
+	if err != nil {
+		log.Fatal(err)
+	}
+	tr := tar.NewReader(gz)
+	for {
+		h, err := tr.Next()
+		if err == io.EOF {
+			return
+		}
+		if err != nil {
+			log.Fatal(err)
+		}
+		_, rel, _ := strings.Cut(h.Name, "/")
+		if h.Typeflag != tar.TypeReg || rel == "" || !filepath.IsLocal(rel) {
+			continue
+		}
+		b, err := io.ReadAll(tr)
+		if err != nil {
+			log.Fatal(err)
+		}
+		p := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			log.Fatal(err)
+		}
+		write(p, b)
+	}
+}
+
+func write(p string, b []byte) {
+	if err := os.WriteFile(p, b, 0o644); err != nil {
+		log.Fatal(err)
+	}
 }
 
 // falconpyRoutes parses every src/falconpy/_endpoint/*.py in the tarball.

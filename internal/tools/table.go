@@ -17,6 +17,7 @@ type Tool struct {
 	// TypeParam names the input that picks an action's variant, e.g.
 	// policy_type; each variant is its own Action with Type set.
 	TypeParam string
+	Guides    []string // guides it documents beyond its actions' filter guides
 	Actions   []Action
 }
 

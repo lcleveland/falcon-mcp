@@ -31,6 +31,7 @@ const (
 // below, which the model can run itself.
 var aiTools = []Tool{
 	{Name: "falcon_guardian", Group: "ai", Title: "AI agent detection (AIDR)",
+		Guides: []string{"falcon://guardian/entities/schema-guide", "falcon://guardian/events/examples-guide"},
 		Description: "Falcon AIDR: AI agents (Claude Code, Cursor, Copilot...) seen on hosts, and their sessions, tools, skills, prompts, process activity and detections. " +
 			"These actions take no FQL filter or sort; they narrow by params, chiefly time_range (e.g. 24h, 7d; hours or days only; the event routes default to 2h and cap at 7d, the inventory routes allow up to 90d). " +
 			"Ids: aid/sensor_id is a 32-hex HOST id (an agent's SensorId); an agent's Id is an opaque record token; session_id is the AgenticSessionId UUID (or aisess:{aid}:{uuid}). " +

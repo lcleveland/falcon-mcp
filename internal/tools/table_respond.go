@@ -38,7 +38,7 @@ var respondTools = []Tool{
 			{Name: "aggregate_file_details", Help: "file buckets for case ids (ids); body is a list of aggregation requests.", Kind: Aggregate, Op: "aggregates_file_details_post_v1", TakesIDs: true,
 				Guide: "falcon://cases/file-aggregates/fql-guide"},
 		}},
-	{Name: "falcon_rtr", Group: "respond", Title: "Real Time Response",
+	{Name: "falcon_rtr", Group: "respond", Title: "Real Time Response", Guides: []string{"falcon://rtr/workflows/investigation-guide"},
 		Description: "Real Time Response sessions and their audit trail. Opening sessions and running commands are separate, opt-in capabilities.",
 		Actions: []Action{
 			{Name: "search_sessions", Help: "RTR sessions matching filter.", Kind: Search,

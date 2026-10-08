@@ -18,6 +18,7 @@ buildGoModule (finalAttrs: {
       ../go.sum
       ../cmd
       ../internal
+      ../guides
     ];
   };
 

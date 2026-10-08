@@ -43,7 +43,7 @@ var hostsTools = []Tool{
 			{Name: "search", Help: "device ids (aid) and scores, e.g. filter score:<=50; sort score|asc for weakest first. Then get by aid for the signals.", Kind: Search,
 				Op: "getAssessmentsByScoreV1", Paging: After, Filter: "score:>=0", Brief: []string{"aid", "score"}},
 			{Name: "get", Help: "full assessments by device id (ids).", Kind: Get, Op: "getAssessmentV1"},
-			{Name: "get_audit", Help: "the tenant-wide score summary.", Kind: Aggregate, Op: "getAuditV1"},
+			{Name: "get_audit", Help: "the tenant-wide score summary.", Kind: Aggregate, NoFilter: true, Op: "getAuditV1"},
 		}},
 	{Name: "falcon_sensor_usage", Group: "hosts", Title: "Sensor usage",
 		Description: "Weekly average sensor counts, as billed.",

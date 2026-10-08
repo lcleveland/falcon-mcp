@@ -32,6 +32,7 @@ func Register(s *mcp.Server, d Deps) (int, func()) {
 	}
 	d.jobs = newJobs(d.Client, d.Log)
 	registerStatus(s, d)
+	registerGuides(s, d)
 	n := 1
 	for _, t := range Tools() {
 		if as := d.actions(t); len(as) > 0 {
@@ -78,6 +79,19 @@ func registerTool(s *mcp.Server, d Deps, t Tool, as []Action) error {
 		schema.Properties[t.TypeParam].Enum = anys(types(as))
 	}
 	schema.Required = []string{"action"}
+	if f := schema.Properties["filter"]; f != nil {
+		var gs []string
+		for _, a := range as {
+			if slices.Contains(a.inputs(t.TypeParam), "filter") && a.Guide != "" && !slices.Contains(gs, a.Guide) {
+				gs = append(gs, a.Guide)
+			}
+		}
+		if len(gs) > 0 {
+			f.Description = "FQL filter; read the action's guide before writing one: " + strings.Join(gs, ", ")
+		} else {
+			f.Description = "FQL filter; the action's help gives examples"
+		}
+	}
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        t.Name,
