@@ -32,7 +32,11 @@ func session(t *testing.T, tokenStatus int, h http.HandlerFunc) *mcp.ClientSessi
 	c.RetryDelay = 0
 
 	s := mcp.NewServer(&mcp.Implementation{Name: "test"}, nil)
-	Register(s, Deps{Client: c, Config: &config.Config{}})
+	probes := &falcon.Probes{Results: map[string]falcon.ProbeResult{
+		"Hosts:read":  {State: falcon.ProbeOK},
+		"Alerts:read": {State: falcon.ProbeMissing, Status: 403},
+	}}
+	Register(s, Deps{Client: c, Config: &config.Config{}, Probes: probes})
 	st, ct := mcp.NewInMemoryTransports()
 	ctx := context.Background()
 	if _, err := s.Connect(ctx, st, nil); err != nil {
@@ -72,6 +76,9 @@ func TestStatus(t *testing.T) {
 	}
 	if rl, _ := out["rate_limit"].(map[string]any); rl["limit"] != 6000.0 || rl["remaining"] != 5999.0 {
 		t.Errorf("rate_limit = %v", out["rate_limit"])
+	}
+	if p, _ := out["probe"].(map[string]any); p["Alerts:read"].(map[string]any)["state"] != falcon.ProbeMissing || p["Hosts:read"].(map[string]any)["state"] != falcon.ProbeOK {
+		t.Errorf("probe = %v", out["probe"])
 	}
 	if query != "/devices/queries/devices/v1?limit=1" {
 		t.Errorf("probe = %s", query)

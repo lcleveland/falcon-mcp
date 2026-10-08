@@ -136,41 +136,75 @@ func TestReauthOn401(t *testing.T) {
 	}
 }
 
+// discoverer is a client whose us-1 is the fake tenant f.
+func discoverer(t *testing.T, f *tenant, hosts map[string]string) *Client {
+	t.Helper()
+	c := newTest(t, f)
+	c.discover = true
+	c.Hosts = map[string]string{"us-1": c.BaseURL()}
+	for k, v := range hosts {
+		c.Hosts[k] = v
+	}
+	return c
+}
+
 func TestAutodiscover(t *testing.T) {
+	ctx := context.Background()
 	home := &tenant{api: status(200, `{}`)}
 	homeURL := serve(t, home)
 
 	us1 := &tenant{cloud: "eu-1"} // the us-1 endpoint, sending us to eu-1
-	c := newTest(t, us1)
-	c.Hosts = map[string]string{"us-1": c.BaseURL(), "eu-1": homeURL}
-	cloud, err := c.Autodiscover(context.Background())
-	if err != nil || cloud != "eu-1" || c.Cloud() != "eu-1" || c.BaseURL() != homeURL {
-		t.Fatalf("cloud = %q, base = %s, err = %v", cloud, c.BaseURL(), err)
+	c := discoverer(t, us1, map[string]string{"eu-1": homeURL})
+	if c.Cloud() != "" {
+		t.Errorf("cloud known before discovery: %q", c.Cloud())
 	}
-	if home.revoked.Load() != 1 {
-		t.Errorf("discovery token not revoked in the home cloud")
+	if _, err := c.Do(ctx, "QueryDevicesByFilter", Params{}); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := c.Do(context.Background(), "QueryDevicesByFilter", Params{}); err != nil || home.tokens.Load() != 1 {
-		t.Errorf("home token: %v, %d", err, home.tokens.Load())
+	if c.Cloud() != "eu-1" || c.BaseURL() != homeURL || home.revoked.Load() != 1 || home.tokens.Load() != 1 {
+		t.Errorf("cloud = %q, base = %s, revoked %d, home tokens %d", c.Cloud(), c.BaseURL(), home.revoked.Load(), home.tokens.Load())
+	}
+	c.Do(ctx, "QueryDevicesByFilter", Params{})
+	if us1.tokens.Load() != 1 {
+		t.Errorf("discovered more than once: %d", us1.tokens.Load())
 	}
 
 	// Staying on us-1 keeps the token.
-	stay := &tenant{cloud: "US-1"}
-	c = newTest(t, stay)
-	c.Hosts = map[string]string{"us-1": c.BaseURL()}
-	if cloud, err := c.Autodiscover(context.Background()); err != nil || cloud != "us-1" || stay.revoked.Load() != 0 {
-		t.Errorf("us-1: %q, %v, revoked %d", cloud, err, stay.revoked.Load())
+	stay := &tenant{cloud: "US-1", api: status(200, `{}`)}
+	c = discoverer(t, stay, nil)
+	if _, err := c.Do(ctx, "QueryDevicesByFilter", Params{}); err != nil || c.Cloud() != "us-1" || stay.revoked.Load() != 0 || stay.tokens.Load() != 1 {
+		t.Errorf("us-1: %q, %v, revoked %d, tokens %d", c.Cloud(), err, stay.revoked.Load(), stay.tokens.Load())
 	}
 
-	// Unknown, gov and missing regions are refused; no URL comes from the header.
+	// Unknown, gov and missing clouds are refused; no URL comes from the header.
 	for _, cloud := range []string{"https://evil.test", "us-gov-1", "", "eu-9"} {
-		f := &tenant{cloud: cloud}
-		c := newTest(t, f)
+		c := discoverer(t, &tenant{cloud: cloud}, map[string]string{"us-gov-1": "https://gov.test"})
 		base := c.BaseURL()
-		c.Hosts = map[string]string{"us-1": base, "us-gov-1": "https://gov.test"}
-		if _, err := c.Autodiscover(context.Background()); err == nil || !strings.Contains(err.Error(), "X-Cs-Region") || c.BaseURL() != base {
+		if _, err := c.Authenticate(ctx); !errors.Is(err, ErrUnknownCloud) || !IsFatal(err) || c.BaseURL() != base {
 			t.Errorf("cloud %q: err = %v, base = %s", cloud, err, c.BaseURL())
 		}
+	}
+
+	// A network failure is not fatal, and discovery is retried next time.
+	c = New("", "", "id", secret, nil, nil)
+	c.Hosts = map[string]string{"us-1": "http://127.0.0.1:1"}
+	c.base = "http://127.0.0.1:1"
+	if _, err := c.Authenticate(ctx); err == nil || IsFatal(err) || !c.discover {
+		t.Errorf("network: err = %v, discover = %t", err, c.discover)
+	}
+}
+
+func TestIsFatal(t *testing.T) {
+	for code, fatal := range map[int]bool{401: true, 403: true, 500: false, 429: false} {
+		_, err := newTest(t, &tenant{tokenErr: code}).Authenticate(context.Background())
+		if IsFatal(err) != fatal {
+			t.Errorf("token %d: IsFatal = %t", code, !fatal)
+		}
+	}
+	// A 403 from an API route is a scope problem, not a startup failure.
+	_, err := newTest(t, &tenant{api: status(403, `{}`)}).Do(context.Background(), "QueryDevicesByFilter", Params{})
+	if err == nil || IsFatal(err) {
+		t.Errorf("api 403: %v", err)
 	}
 }
 

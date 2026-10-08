@@ -32,6 +32,7 @@ type Config struct {
 	ClientSecret   string
 	RequestTimeout time.Duration
 	LogLevel       slog.Level
+	NoProbe        bool
 
 	ShowVersion bool
 }
@@ -48,6 +49,7 @@ func (c *Config) LogValue() slog.Value {
 		slog.String("client_id", c.ClientID),
 		slog.Bool("client_secret_set", c.ClientSecret != ""),
 		slog.Duration("request_timeout", c.RequestTimeout),
+		slog.Bool("no_probe", c.NoProbe),
 	)
 }
 
@@ -70,6 +72,7 @@ func Parse(args []string, getenv func(string) string) (*Config, []string, error)
 	fs.StringVar(&secretFile, "client-secret-file", getenv("FALCON_CLIENT_SECRET_FILE"), "file holding the client secret (env FALCON_CLIENT_SECRET_FILE)")
 	fs.DurationVar(&c.RequestTimeout, "request-timeout", 30*time.Second, "per-request timeout to Falcon")
 	fs.StringVar(&logLevel, "log-level", or(getenv("FALCON_MCP_LOG_LEVEL"), "info"), "debug|info|warn|error (env FALCON_MCP_LOG_LEVEL)")
+	fs.BoolVar(&c.NoProbe, "no-probe", false, "skip the startup scope probe and show every action")
 	fs.BoolVar(&c.ShowVersion, "version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {

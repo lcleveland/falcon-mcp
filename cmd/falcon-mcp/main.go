@@ -47,19 +47,16 @@ func run(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	hc := &http.Client{Timeout: cfg.RequestTimeout}
-	var c *falcon.Client
+	base := ""
 	if cfg.BaseURL != nil {
-		c = falcon.New(cfg.Cloud, cfg.BaseURL.String(), cfg.ClientID, cfg.ClientSecret, hc, log)
-	} else {
-		c = falcon.New("", falcon.Clouds["us-1"], cfg.ClientID, cfg.ClientSecret, hc, log)
-		cloud, err := c.Autodiscover(ctx)
-		if err != nil {
-			return err
-		}
-		log.Info("autodiscovered cloud", "cloud", cloud)
+		base = cfg.BaseURL.String()
 	}
-	s, n := server.New(cfg, c, log)
+	c := falcon.New(cfg.Cloud, base, cfg.ClientID, cfg.ClientSecret, &http.Client{Timeout: cfg.RequestTimeout}, log)
+	probes, err := server.Probe(ctx, cfg, c, log)
+	if err != nil {
+		return err
+	}
+	s, n := server.New(cfg, c, probes, log)
 	log.Info("registered tools", "count", n)
 	return server.ServeStdio(ctx, s)
 }

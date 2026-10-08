@@ -13,6 +13,7 @@ import (
 type Deps struct {
 	Client *falcon.Client
 	Config *config.Config
+	Probes *falcon.Probes // nil shows everything
 	Log    *slog.Logger
 }
 

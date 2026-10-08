@@ -25,6 +25,10 @@ type StatusOutput struct {
 	APIReachable  bool       `json:"api_reachable"`
 	RateLimit     *RateLimit `json:"rate_limit,omitempty"`
 	Detail        string     `json:"detail,omitempty"`
+	// The startup probe, by read scope. Only "missing scope or not
+	// licensed" hides that scope's actions.
+	Probe     map[string]falcon.ProbeResult `json:"probe,omitempty"`
+	ProbeNote string                        `json:"probe_note,omitempty"`
 }
 
 // statusOp is the cheap read whose reply carries the rate-limit headers.
@@ -35,14 +39,20 @@ func registerStatus(s *mcp.Server, d Deps) {
 		Name:  "falcon_status",
 		Title: "Falcon connectivity check",
 		Description: "Check that the Falcon API client can authenticate, report the cloud and base URL, and make one " +
-			"cheap authenticated read to show the rate-limit headroom.\n\n" +
+			"cheap authenticated read to show the rate-limit headroom. Also lists the startup scope probe: " +
+			"actions whose scope reads \"missing scope or not licensed\" are hidden; restart the server after " +
+			"granting a scope.\n\n" +
 			"Call this first when another tool fails: it tells rejected credentials apart from a token that " +
 			"works but lacks a scope.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: new(true)},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, StatusOutput, error) {
 		c := d.Client
-		out := StatusOutput{Cloud: c.Cloud(), BaseURL: c.BaseURL()}
+		out := StatusOutput{}
+		if d.Probes != nil {
+			out.Probe, out.ProbeNote = d.Probes.Results, d.Probes.Note
+		}
 		exp, err := c.Authenticate(ctx)
+		out.Cloud, out.BaseURL = c.Cloud(), c.BaseURL() // after a pending autodiscovery
 		if err != nil {
 			out.Detail = err.Error()
 			return &mcp.CallToolResult{IsError: true}, out, nil

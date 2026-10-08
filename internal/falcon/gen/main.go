@@ -39,6 +39,11 @@ var extra = map[string]string{
 	"RTR_ExecuteActiveResponderCommand":     "Real time response:write",
 	"RTR_CheckActiveResponderCommandStatus": "Real time response:write",
 	"BatchActiveResponderCmd":               "Real time response:write",
+	// Probe routes for read scopes upstream reaches only through POSTs,
+	// required filters or write scopes.
+	"query_hosts":          "Assets:read",
+	"ListSavedQueries":     "NGSIEM:read",
+	"QuerySensorsByFilter": "Identity Protection Entities:read",
 	// Upstream's key for this predates FalconPy's rename; upstream also lists
 	// four read scopes, but GraphQL:write is the one the call needs.
 	"post_graphql": "Identity Protection GraphQL:write",

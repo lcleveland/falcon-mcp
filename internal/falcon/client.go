@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -50,6 +51,7 @@ type Client struct {
 	log          *slog.Logger
 
 	mu        sync.Mutex
+	discover  bool // cloud not yet known; autodiscover on the next token
 	cloud     string
 	base      string // no trailing slash
 	token     string
@@ -64,8 +66,9 @@ type Client struct {
 	SlowDown   time.Duration     // pause before each request while headroom is low
 }
 
-// New builds a client for one cloud (empty with --base-url). hc may be nil;
-// its Timeout is the per-request timeout.
+// New builds a client for one cloud (empty with --base-url). With neither a
+// cloud nor a base URL, the cloud is autodiscovered from us-1 on first use.
+// hc may be nil; its Timeout is the per-request timeout.
 func New(cloud, base, clientID, clientSecret string, hc *http.Client, log *slog.Logger) *Client {
 	if hc == nil {
 		hc = &http.Client{Timeout: 30 * time.Second}
@@ -73,7 +76,11 @@ func New(cloud, base, clientID, clientSecret string, hc *http.Client, log *slog.
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	return &Client{cloud: cloud, base: strings.TrimRight(base, "/"), clientID: clientID, clientSecret: clientSecret,
+	discover := cloud == "" && base == ""
+	if discover {
+		base = Clouds["us-1"]
+	}
+	return &Client{discover: discover, cloud: cloud, base: strings.TrimRight(base, "/"), clientID: clientID, clientSecret: clientSecret,
 		hc: hc, log: log, limit: -1, remaining: -1,
 		Hosts: Clouds, MaxWait: 60 * time.Second, RetryDelay: time.Second, SlowDown: 250 * time.Millisecond}
 }
@@ -98,39 +105,58 @@ func (c *Client) Authenticate(ctx context.Context) (time.Time, error) {
 	return c.expiry, nil
 }
 
-// Autodiscover takes a token from the configured host (us-1), reads the
-// tenant's cloud from X-Cs-Region and switches to that cloud's hard-coded
-// host. A URL is never built from the header. Call it before serving.
-func (c *Client) Autodiscover(ctx context.Context) (string, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+// ErrUnknownCloud is returned when X-Cs-Region names no allowed cloud.
+var ErrUnknownCloud = errors.New("cloud autodiscovery: unrecognised X-Cs-Region")
+
+// IsFatal reports a startup error that no retry can fix: the token endpoint
+// refused the credentials, or autodiscovery found no allowed cloud.
+func IsFatal(err error) bool {
+	var ae *APIError
+	if errors.As(err, &ae) && ae.Path == tokenPath {
+		return ae.Status == http.StatusUnauthorized || ae.Status == http.StatusForbidden
+	}
+	return errors.Is(err, ErrUnknownCloud)
+}
+
+// autodiscover takes a token from us-1, reads the tenant's cloud from
+// X-Cs-Region and switches to that cloud's hard-coded host. A URL is never
+// built from the header. The caller holds c.mu.
+func (c *Client) autodiscover(ctx context.Context) error {
 	tok, expiry, h, err := c.fetchToken(ctx)
 	if err != nil {
-		return "", err
+		return err
 	}
 	cloud := strings.ToLower(strings.TrimSpace(h.Get("X-Cs-Region")))
 	host, ok := c.Hosts[cloud]
 	if !ok || !slices.Contains(discoverable, cloud) {
 		c.revoke(ctx, c.base, tok)
-		return "", fmt.Errorf("cloud autodiscovery: unrecognised X-Cs-Region %.32q; set --cloud", cloud)
+		return fmt.Errorf("%w %.32q; set --cloud", ErrUnknownCloud, cloud)
 	}
+	c.discover = false
+	c.log.Info("autodiscovered cloud", "cloud", cloud)
 	if host == c.base {
 		c.cloud, c.token, c.expiry = cloud, tok, expiry
-		return cloud, nil
+		return nil
 	}
 	// The discovery token is not used across clouds; revoke it in the
 	// tenant's home cloud, as gofalcon does, and mint a fresh one there.
 	c.revoke(ctx, host, tok)
 	c.cloud, c.base, c.token = cloud, host, ""
-	return cloud, nil
+	return nil
 }
 
 // bearer returns a cached token, refreshing it early or when force is set
 // (after a 401). Client credentials has no refresh token, so refreshing is
-// simply asking again.
+// simply asking again. A pending autodiscovery runs first, so a network
+// failure at startup is retried on the next call.
 func (c *Client) bearer(ctx context.Context, force bool) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.discover {
+		if err := c.autodiscover(ctx); err != nil {
+			return "", err
+		}
+	}
 	if !force && c.token != "" && time.Until(c.expiry) > refreshEarly {
 		return c.token, nil
 	}
