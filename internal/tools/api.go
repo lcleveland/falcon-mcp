@@ -64,6 +64,12 @@ func apiRoutes() map[string]apiRoute {
 				rs[a.Op] = apiRoute{tool: t.Name}
 			case a.Capability != "" && rs[a.Op].tool == "":
 				rs[a.Op] = apiRoute{capability: a.Capability}
+				// An unlisted GET in the same area (an RTR v1 sibling)
+				// is gated alike.
+				op, _ := falcon.Lookup(a.Op)
+				if area := apiArea(op.Path); rs[area].capability == "" {
+					rs[area] = apiRoute{capability: a.Capability}
+				}
 			}
 		}
 	}
@@ -108,10 +114,13 @@ func (d Deps) api(ctx context.Context, rs map[string]apiRoute, in apiInput) (map
 	if err != nil {
 		return nil, err
 	}
-	r := rs[id]
+	r, ok := rs[id]
+	if !ok && op.Scope == "" { // an unlisted GET
+		r = rs[apiArea(op.Path)]
+	}
 	switch {
 	case r.tool != "":
-		return nil, fmt.Errorf("%s is sent by %s, whose actions apply its rails (confirmation, bulk caps, allowlists); call that tool instead", id, r.tool)
+		return nil, fmt.Errorf("%s is sent by %s, whose actions apply its rails (confirmation, bulk caps, allowlists); call that tool instead (it is listed when its tool group is on)", id, r.tool)
 	case r.capability == never:
 		return nil, fmt.Errorf("%s is a write this server never exposes", id)
 	case op.Write && r.capability == "":
@@ -133,7 +142,19 @@ func (d Deps) api(ctx context.Context, rs map[string]apiRoute, in apiInput) (map
 	if reason == "" {
 		return nil, errors.New("reason is required for writes; say why, it is recorded in the audit log")
 	}
+	if n := apiIDs(p); n > d.Config.MaxBulk {
+		return nil, fmt.Errorf("%d ids is more than the limit of %d per write; split it", n, d.Config.MaxBulk)
+	}
 	audit := []any{"tool", "falcon_api", "op", id, "capability", r.capability, "reason", reason}
+	if len(p.Path) > 0 {
+		audit = append(audit, "path_params", p.Path)
+	}
+	if len(p.Query) > 0 {
+		audit = append(audit, "query", p.Query)
+	}
+	if p.Body != nil {
+		audit = append(audit, "body", p.Body)
+	}
 	d.Log.Info("falcon write sending", audit...)
 	raw, err := d.Client.DoOp(ctx, id, op, p)
 	if err != nil {
@@ -148,6 +169,21 @@ func (d Deps) api(ctx context.Context, rs map[string]apiRoute, in apiInput) (map
 	meta, _ := out["meta"].(map[string]any)
 	d.Log.Info("falcon write", append(audit, "trace_id", meta["trace_id"])...)
 	return out, err
+}
+
+// apiArea is the first segment of a path: the API it belongs to.
+func apiArea(path string) string {
+	return "/" + strings.Split(path, "/")[1]
+}
+
+// apiIDs counts the ids a write names, in the query or the body.
+func apiIDs(p falcon.Params) int {
+	n := len(p.Query["ids"])
+	if b, ok := p.Body.(map[string]any); ok {
+		ids, _ := b["ids"].([]any)
+		n += len(ids)
+	}
+	return n
 }
 
 // apiPath is a concrete API path: no query, encoding, braces or dot segments.

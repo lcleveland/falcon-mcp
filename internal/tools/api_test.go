@@ -113,8 +113,25 @@ func TestAPIWriteNeedsCapability(t *testing.T) {
 	if !isErr || !strings.Contains(text, "rtr-read") {
 		t.Errorf("%v %s", isErr, text)
 	}
+	// An unlisted RTR route is gated with the listed ones.
+	_, isErr, text = call("falcon_api", map[string]any{"method": "GET", "path": "/real-time-response/entities/file/v1"})
+	if !isErr || !strings.Contains(text, "rtr-read") {
+		t.Errorf("unlisted RTR GET: %v %s", isErr, text)
+	}
 	if r := f.requests(); len(r) != 0 {
 		t.Errorf("sent: %v", r)
+	}
+}
+
+func TestAPIWriteBulkCap(t *testing.T) {
+	f := &fakeWrites{}
+	call, _ := writeSession(t, []string{"detection-add"}, 2, f)
+	_, isErr, text := call("falcon_api", map[string]any{"op": "DeleteSuppressionRules", "reason": "x", "query": map[string]any{"ids": []any{"a", "b", "c"}}})
+	if !isErr || !strings.Contains(text, "limit of 2") {
+		t.Errorf("%v %s", isErr, text)
+	}
+	if w := f.writes(); len(w) != 0 {
+		t.Errorf("sent: %v", w)
 	}
 }
 
@@ -135,7 +152,7 @@ func TestAPIWrite(t *testing.T) {
 	if w[0].Body != `{"name":"r"}` || w[0].Query != "x=a&x=2" {
 		t.Errorf("sent %+v", w[0])
 	}
-	for _, s := range []string{`"tool":"falcon_api"`, `"op":"entities_rules_post_v1"`, `"capability":"detection-add"`, `"reason":"new rule for ticket 7"`, "falcon write failed"} {
+	for _, s := range []string{`"tool":"falcon_api"`, `"op":"entities_rules_post_v1"`, `"capability":"detection-add"`, `"reason":"new rule for ticket 7"`, `"body":{"name":"r"}`, "falcon write failed"} {
 		if !strings.Contains(logs.String(), s) {
 			t.Errorf("audit log lacks %s:\n%s", s, logs)
 		}
