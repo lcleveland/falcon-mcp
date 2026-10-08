@@ -170,3 +170,35 @@ func TestCapabilitiesOffByDefault(t *testing.T) {
 		t.Error("--max-bulk 0 accepted")
 	}
 }
+
+func TestHTTPListenerNeedsAuthOffLoopback(t *testing.T) {
+	sec := secretFile(t, "s", "secret")
+	base := []string{"--cloud", "eu-1", "--client-id", "id", "--client-secret-file", sec, "--http"}
+	c, _, err := Parse(base, env(nil))
+	if err != nil || c.Addr != "127.0.0.1:8235" || c.Path != "/mcp" || c.HTTPAuthToken != "" {
+		t.Errorf("loopback default: %+v %v", c, err)
+	}
+	if _, _, err := Parse(append(base, "--addr", "0.0.0.0:8235"), env(nil)); err == nil {
+		t.Error("non-loopback without auth: want error")
+	}
+	tok := secretFile(t, "tok", "bearer")
+	c, _, err = Parse(append(base, "--addr", "0.0.0.0:8235", "--http-auth-token-file", tok), env(nil))
+	if err != nil || c.HTTPAuthToken != "bearer" {
+		t.Errorf("flag token: %v", err)
+	}
+	c, _, err = Parse(append(base, "--addr", ":8235"), env(map[string]string{"FALCON_MCP_HTTP_AUTH_TOKEN_FILE": tok}))
+	if err != nil || c.HTTPAuthToken != "bearer" {
+		t.Errorf("env token: %v", err)
+	}
+	credDir := filepath.Dir(secretFile(t, "http-auth-token", "from-cred"))
+	c, _, err = Parse(append(base, "--addr", "[::]:8235"), env(map[string]string{"CREDENTIALS_DIRECTORY": credDir}))
+	if err != nil || c.HTTPAuthToken != "from-cred" {
+		t.Errorf("credential token: %v", err)
+	}
+	if _, _, err := Parse(append(base, "--stdio"), env(nil)); err == nil {
+		t.Error("--stdio with --http: want error")
+	}
+	if _, _, err := Parse(append(base, "--path", "mcp"), env(nil)); err == nil {
+		t.Error("--path without leading /: want error")
+	}
+}

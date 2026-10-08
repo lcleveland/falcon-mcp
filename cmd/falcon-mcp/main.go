@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -59,5 +60,12 @@ func run(args []string) error {
 	s, n, stopTools := server.New(cfg, c, probes, log)
 	defer stopTools()
 	log.Info("registered tools", "count", n)
+	if cfg.HTTP {
+		ln, err := net.Listen("tcp", cfg.Addr)
+		if err != nil {
+			return err
+		}
+		return server.ServeHTTP(ctx, ln, cfg, s, log)
+	}
 	return server.ServeStdio(ctx, s)
 }

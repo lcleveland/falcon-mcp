@@ -15,7 +15,8 @@ import (
 
 // NGSIEM query jobs run past one tool call: search polls for pollFor, then
 // hands back a cursor for the job. Live jobs wait in a small table and are
-// stopped when nobody resumes them within jobTTL, or at shutdown.
+// stopped when nobody resumes them within jobTTL, or at shutdown, as are jobs
+// a call is polling.
 var (
 	pollFor   = 25 * time.Second
 	pollEvery = time.Second
@@ -35,12 +36,13 @@ type jobs struct {
 	log *slog.Logger
 	mu  sync.Mutex
 	m   map[string]*job // by job id
+	run map[*job]bool   // being polled by a call in flight
 
 	closed bool
 }
 
 func newJobs(c *falcon.Client, log *slog.Logger) *jobs {
-	return &jobs{c: c, log: log, m: map[string]*job{}}
+	return &jobs{c: c, log: log, m: map[string]*job{}, run: map[*job]bool{}}
 }
 
 // park keeps j for a later resume, evicting the oldest job when full.
@@ -85,6 +87,24 @@ func (js *jobs) take(id string) *job {
 	return j
 }
 
+// begin marks j as polled by a call in flight, so Close stops it too. After
+// Close it refuses and the caller must stop j.
+func (js *jobs) begin(j *job) bool {
+	js.mu.Lock()
+	defer js.mu.Unlock()
+	if js.closed {
+		return false
+	}
+	js.run[j] = true
+	return true
+}
+
+func (js *jobs) end(j *job) {
+	js.mu.Lock()
+	defer js.mu.Unlock()
+	delete(js.run, j)
+}
+
 func (js *jobs) dropLocked(j *job) {
 	j.timer.Stop()
 	delete(js.m, j.id)
@@ -100,15 +120,20 @@ func (js *jobs) stop(j *job) {
 	}
 }
 
-// Close stops every parked job.
+// Close stops every parked or polled job. A call still polling one carries
+// on against a stopped job.
 func (js *jobs) Close() {
 	js.mu.Lock()
-	all := make([]*job, 0, len(js.m))
+	all := make([]*job, 0, len(js.m)+len(js.run))
 	for _, j := range js.m {
 		j.timer.Stop()
 		all = append(all, j)
 	}
+	for j := range js.run {
+		all = append(all, j)
+	}
 	clear(js.m)
+	clear(js.run)
 	js.closed = true
 	js.mu.Unlock()
 	var wg sync.WaitGroup
@@ -166,7 +191,12 @@ func ngsiemSearch(ctx context.Context, d Deps, in Input) (map[string]any, error)
 		j = &job{repo: repo, id: started.ID, born: time.Now()}
 	}
 
+	if !d.jobs.begin(j) {
+		d.jobs.stop(j)
+		return nil, errors.New("the server is shutting down")
+	}
 	st, err := d.poll(ctx, j)
+	d.jobs.end(j)
 	if err != nil {
 		go d.jobs.stop(j)
 		return nil, err

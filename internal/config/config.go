@@ -46,6 +46,11 @@ type Config struct {
 	Allow   map[string]bool // capability -> enabled
 	MaxBulk int             // most records one write may touch
 
+	HTTP          bool // streamable HTTP instead of stdio
+	Addr          string
+	Path          string
+	HTTPAuthToken string // bearer HTTP clients must send; empty means none
+
 	ShowVersion bool
 }
 
@@ -65,6 +70,9 @@ func (c *Config) LogValue() slog.Value {
 		slog.Any("groups", c.Groups),
 		slog.Any("capabilities", c.Enabled()),
 		slog.Int("max_bulk", c.MaxBulk),
+		slog.Bool("http", c.HTTP),
+		slog.String("addr", c.Addr),
+		slog.Bool("http_auth_set", c.HTTPAuthToken != ""),
 	)
 }
 
@@ -74,7 +82,8 @@ func Parse(args []string, getenv func(string) string) (*Config, []string, error)
 	var (
 		c                                    Config
 		rawURL, idFile, secretFile, logLevel string
-		groups                               string
+		groups, hauth                        string
+		stdio                                bool
 		warnings                             []string
 	)
 	clouds := slices.Sorted(maps.Keys(falcon.Clouds))
@@ -95,6 +104,11 @@ func Parse(args []string, getenv func(string) string) (*Config, []string, error)
 	}
 	fs.IntVar(&c.MaxBulk, "max-bulk", 1000, "most records one write may touch")
 	fs.BoolVar(&c.NoProbe, "no-probe", false, "skip the startup scope probe and show every action")
+	fs.BoolVar(&stdio, "stdio", false, "serve over stdio (default)")
+	fs.BoolVar(&c.HTTP, "http", false, "serve over streamable HTTP")
+	fs.StringVar(&c.Addr, "addr", "127.0.0.1:8235", "HTTP listen address")
+	fs.StringVar(&c.Path, "path", "/mcp", "HTTP MCP endpoint path")
+	fs.StringVar(&hauth, "http-auth-token-file", getenv("FALCON_MCP_HTTP_AUTH_TOKEN_FILE"), "file holding the bearer token HTTP clients must send (env FALCON_MCP_HTTP_AUTH_TOKEN_FILE)")
 	fs.BoolVar(&c.ShowVersion, "version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -109,6 +123,9 @@ func Parse(args []string, getenv func(string) string) (*Config, []string, error)
 	}
 	if fs.NArg() > 0 {
 		return nil, nil, fmt.Errorf("unexpected argument %q", fs.Arg(0))
+	}
+	if stdio && c.HTTP {
+		return nil, nil, errors.New("--stdio and --http are mutually exclusive")
 	}
 	if c.MaxBulk < 1 {
 		return nil, nil, errors.New("--max-bulk must be at least 1")
@@ -177,6 +194,24 @@ func Parse(args []string, getenv func(string) string) (*Config, []string, error)
 	}
 	if err != nil {
 		return nil, nil, err
+	}
+
+	if c.HTTP {
+		if !strings.HasPrefix(c.Path, "/") {
+			return nil, nil, errors.New("--path must start with /")
+		}
+		switch {
+		case hauth != "":
+			c.HTTPAuthToken, err = readSecret(hauth)
+		case credDir != "":
+			c.HTTPAuthToken, _ = readSecret(filepath.Join(credDir, "http-auth-token"))
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+		if c.HTTPAuthToken == "" && !loopback(c.Addr) {
+			return nil, nil, fmt.Errorf("refusing to listen on non-loopback %s without --http-auth-token-file", c.Addr)
+		}
 	}
 	return &c, warnings, nil
 }
