@@ -199,9 +199,9 @@ func object(body any) (map[string]any, error) {
 	return m, nil
 }
 
-// queryIDs caps writes that send ids in the query string, which Falcon
+// maxQueryIDs caps writes that send ids in the query string, which Falcon
 // bounds only by URL length.
-const queryIDs = 100
+const maxQueryIDs = 100
 
 // entity sends the body input as one record: with the reason as its
 // comment when comment, the id input as its id when withID, and wrapped as

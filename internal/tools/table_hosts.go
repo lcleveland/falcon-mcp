@@ -54,7 +54,7 @@ var hostsTools = []Tool{
 			{Name: "update", Help: "update host group id; body is the fields to set {name, description, assignment_rule}. A new assignment_rule can move many hosts, and their policies, at once.",
 				Kind: Write, Capability: "fleet-config", Op: "updateHostGroups", Inputs: []string{"id", "body"}, Send: entity("resources", true, false)},
 			{Name: "delete", Help: "delete host groups by id (ids); their hosts lose the policies assigned through them.",
-				Kind: Write, Capability: "fleet-config", Op: "deleteHostGroups", Target: TargetIDs, MaxIDs: queryIDs, Send: deleteIDs(false)},
+				Kind: Write, Capability: "fleet-config", Op: "deleteHostGroups", Target: TargetIDs, MaxIDs: maxQueryIDs, Send: deleteIDs(false)},
 			{Name: "add_hosts", Help: "add hosts by device id (ids; find them with falcon_host search) to static host group id.",
 				Kind: Write, Capability: "fleet-config", Op: "performGroupAction", Target: TargetIDs, Inputs: []string{"id"}, Send: groupMembers("add-hosts")},
 			{Name: "remove_hosts", Help: "remove hosts by device id (ids; find them with falcon_host search) from static host group id.",

@@ -453,6 +453,7 @@ func TestNeverExposed(t *testing.T) {
 	for _, args := range []map[string]any{
 		{"action": "create", "policy_type": "sensor_update", "body": map[string]any{"name": "p", "settings": map[string]any{"uninstall_protection": "DISABLED"}}},
 		{"action": "update", "policy_type": "sensor_update", "id": "p1", "body": map[string]any{"settings": map[string]any{"uninstall_protection": "MAINTENANCE_MODE"}}},
+		{"action": "update", "policy_type": "sensor_update", "id": "p1", "body": map[string]any{"settings": map[string]any{"Uninstall_Protection": "DISABLED"}}},
 	} {
 		args["reason"] = "r"
 		if _, isErr, text := call("falcon_policy", args); !isErr || !strings.Contains(text, "uninstall") {
@@ -470,7 +471,9 @@ func TestNeverExposed(t *testing.T) {
 
 // An IOC update cannot lower protection without detection-remove.
 func TestIOCActionNeedsItsSide(t *testing.T) {
-	f := &fakeWrites{}
+	f := &fakeWrites{replies: map[string]reply{
+		"GET /iocs/entities/indicators/v1": {200, `{"resources":[{"id":"i1","action":"prevent"},{"id":"i9","action":"allow"}]}`},
+	}}
 	call, _ := writeSession(t, []string{"detection-add"}, 0, f)
 	for _, args := range []map[string]any{
 		{"action": "update", "ids": []string{"i1"}, "body": map[string]any{"action": "allow"}},
@@ -478,6 +481,7 @@ func TestIOCActionNeedsItsSide(t *testing.T) {
 		{"action": "create", "body": map[string]any{"type": "domain", "value": "x.test", "action": "allow"}},
 		{"action": "create", "body": []any{map[string]any{"type": "domain", "value": "x.test", "action": "prevent"}, map[string]any{"type": "domain", "value": "y.test"}}},
 		{"action": "update_allow", "ids": []string{"i1"}, "body": map[string]any{"action": "allow"}},
+		{"action": "update", "ids": []string{"i1", "i9"}, "body": map[string]any{"applied_globally": true}}, // i9 is an allow IOC
 	} {
 		args["reason"] = "r"
 		if _, isErr, text := call("falcon_ioc", args); !isErr {

@@ -93,7 +93,7 @@ var preventTools = []Tool{
 			{Name: "update_rule_group", Help: "change a firewall rule group: name, description, enabled, or its rules; body {id, rulegroup_version (from get_rule_groups), name, description, enabled, diff_operations, rule_ids, rule_versions, tracking}. The reason is sent as the audit comment.",
 				Kind: Write, Capability: "fleet-config", Op: "update_rule_group", Inputs: []string{"body"}, Send: fwRuleGroup},
 			{Name: "delete_rule_groups", Help: "delete firewall rule groups by id (ids). The reason is sent as the audit comment.",
-				Kind: Write, Capability: "fleet-config", Op: "delete_rule_groups", Target: TargetIDs, MaxIDs: queryIDs, Send: deleteIDs(true)},
+				Kind: Write, Capability: "fleet-config", Op: "delete_rule_groups", Target: TargetIDs, MaxIDs: maxQueryIDs, Send: deleteIDs(true)},
 		}},
 	{Name: "falcon_custom_ioa", Group: "prevent", Title: "Custom IOA rules",
 		Description: "Custom Indicator of Attack rule groups and the behavioral rules inside them, plus the platforms and rule types they can use.",
@@ -118,9 +118,9 @@ var preventTools = []Tool{
 			{Name: "disable_rules", Help: "disable rules by instance id (ids) in rule group id. The reason is sent as the comment.",
 				Kind: Write, Capability: "detection-remove", Op: "update_rules_v2", Target: TargetIDs, Inputs: []string{"id"}, Send: ioaRulesEnabled(false)},
 			{Name: "delete_rule_groups", Help: "delete rule groups, with their rules, by id (ids). The reason is sent as the comment.",
-				Kind: Write, Capability: "detection-remove", Op: "delete_rule_groupsMixin0", Target: TargetIDs, MaxIDs: queryIDs, Send: deleteIDs(true)},
+				Kind: Write, Capability: "detection-remove", Op: "delete_rule_groupsMixin0", Target: TargetIDs, MaxIDs: maxQueryIDs, Send: deleteIDs(true)},
 			{Name: "delete_rules", Help: "delete rules by instance id (ids) from rule group id. The reason is sent as the comment.",
-				Kind: Write, Capability: "detection-remove", Op: "delete_rules", Target: TargetIDs, MaxIDs: queryIDs, Inputs: []string{"id"}, Send: ioaRulesDelete},
+				Kind: Write, Capability: "detection-remove", Op: "delete_rules", Target: TargetIDs, MaxIDs: maxQueryIDs, Inputs: []string{"id"}, Send: ioaRulesDelete},
 		}},
 	{Name: "falcon_ioc", Group: "prevent", Title: "Custom IOCs",
 		Description: "Custom indicators of compromise (hashes, domains, IPs) and the action Falcon takes on them.",
@@ -132,7 +132,7 @@ var preventTools = []Tool{
 			{Name: "create", Help: "create IOCs that detect or block; body is one indicator or a list: {type (sha256|md5|domain|ipv4|ipv6), value, action (detect|prevent|prevent_no_ui), severity, platforms, applied_globally or host_groups, expiration, description, tags}; " +
 				"params retrodetects, ignore_warnings. The reason is sent as the comment.",
 				Kind: Write, Capability: "detection-add", Op: "indicator_create_v1", Inputs: []string{"body"}, Params: iocParams, Send: iocCreate(iocBlock)},
-			{Name: "update", Help: "set fields (body, e.g. {severity, expiration, host_groups}) on IOCs by id (ids), or by filter with confirm=<count>; action may only become detect, prevent or prevent_no_ui. params retrodetects, ignore_warnings. The reason is sent as the comment.",
+			{Name: "update", Help: "set fields (body, e.g. {severity, expiration, host_groups}) on IOCs by id (ids), or by filter with confirm=<count>; action may only become detect, prevent or prevent_no_ui, and IOCs that are allow or no_action are refused (use update_allow). params retrodetects, ignore_warnings. The reason is sent as the comment.",
 				Kind: Write, Capability: "detection-add", Op: "indicator_update_v1", Target: TargetIDs, Resolve: "indicator_search_v1", Inputs: []string{"body"}, Params: iocParams,
 				Guide: "falcon://ioc/search/fql-guide", Send: iocUpdate(iocBlock, false)},
 			{Name: "create_allow", Help: "create IOCs that Falcon allows or ignores (action allow|no_action), which lowers protection; body as for create. The reason is sent as the comment.",
@@ -140,8 +140,8 @@ var preventTools = []Tool{
 			{Name: "update_allow", Help: "set IOCs by id (ids), or by filter with confirm=<count>, to action allow or no_action (body {action, ...other fields}), which lowers protection. The reason is sent as the comment.",
 				Kind: Write, Capability: "detection-remove", Op: "indicator_update_v1", Target: TargetIDs, Resolve: "indicator_search_v1", Inputs: []string{"body"}, Params: iocParams,
 				Guide: "falcon://ioc/search/fql-guide", Send: iocUpdate(iocAllow, true)},
-			{Name: "delete", Help: "delete IOCs by id (ids), or by filter with confirm=<count>. The reason is sent as the comment.",
-				Kind: Write, Capability: "detection-remove", Op: "indicator_delete_v1", Target: TargetIDs, Resolve: "indicator_search_v1", MaxIDs: queryIDs,
+			{Name: "delete", Help: "delete IOCs by id (ids), or by filter with confirm=<count>; at most 100 per call. The reason is sent as the comment.",
+				Kind: Write, Capability: "detection-remove", Op: "indicator_delete_v1", Target: TargetIDs, Resolve: "indicator_search_v1", MaxIDs: maxQueryIDs,
 				Guide: "falcon://ioc/search/fql-guide", Send: deleteIDs(true)},
 		}},
 }
@@ -168,7 +168,7 @@ func policyWrites() []Action {
 		as = append(as,
 			with(w, Action{Name: "create", Help: createHelp, Op: p.create, Inputs: []string{"body"}, Send: policyEntity(p.key, false)}),
 			with(w, Action{Name: "update", Help: updateHelp, Op: p.update, Inputs: []string{"id", "body"}, Send: policyEntity(p.key, true)}),
-			with(w, Action{Name: "delete", Help: deleteHelp, Op: p.del, Target: TargetIDs, MaxIDs: queryIDs, Send: deleteIDs(false)}),
+			with(w, Action{Name: "delete", Help: deleteHelp, Op: p.del, Target: TargetIDs, MaxIDs: maxQueryIDs, Send: deleteIDs(false)}),
 			with(w, Action{Name: "perform", Help: performHelp, Op: p.perform, Inputs: []string{"id", "body"}, Params: []string{"action_name"}, Send: policyAction}),
 			with(w, Action{Name: "set_precedence", Help: precedenceHelp, Op: p.prec, Target: TargetIDs, Params: []string{"platform_name"}, Send: policyPrecedence}),
 		)
@@ -195,7 +195,7 @@ func exclusionWrites() []Action {
 		as = append(as,
 			with(w, Action{Name: "create", Help: createHelp, Op: e.create, Inputs: []string{"body"}, Send: entity(e.createKey, false, true)}),
 			with(w, Action{Name: "update", Help: updateHelp, Op: e.update, Inputs: []string{"id", "body"}, Send: entity(e.updateKey, true, true)}),
-			with(w, Action{Name: "delete", Help: deleteHelp, Op: e.del, Target: TargetIDs, MaxIDs: queryIDs, Send: deleteIDs(true)}),
+			with(w, Action{Name: "delete", Help: deleteHelp, Op: e.del, Target: TargetIDs, MaxIDs: maxQueryIDs, Send: deleteIDs(true)}),
 		)
 	}
 	return as
@@ -225,7 +225,7 @@ func uninstallOff(v any) bool {
 	switch v := v.(type) {
 	case map[string]any:
 		for k, x := range v {
-			if k == "uninstall_protection" && x != "ENABLED" || uninstallOff(x) {
+			if strings.EqualFold(k, "uninstall_protection") && x != "ENABLED" || uninstallOff(x) {
 				return true
 			}
 		}
@@ -261,9 +261,12 @@ func policyPrecedence(w WriteCall) (falcon.Params, error) {
 // fwRuleGroup sends the body, with the reason as the audit comment.
 func fwRuleGroup(w WriteCall) (falcon.Params, error) {
 	b, err := object(w.Body)
+	if err != nil {
+		return falcon.Params{}, err
+	}
 	q := maps.Clone(w.Values)
 	q.Set("comment", w.Reason)
-	return falcon.Params{Query: q, Body: b}, err
+	return falcon.Params{Query: q, Body: b}, nil
 }
 
 // ioaGroup reads custom IOA rule group id, whose version and fields an
@@ -376,6 +379,11 @@ func iocUpdate(sides []string, required bool) sender {
 		if err := iocSide(b, sides, required); err != nil {
 			return falcon.Params{}, err
 		}
+		if !required {
+			if err := noAllowIOCs(w); err != nil {
+				return falcon.Params{}, err
+			}
+		}
 		items := make([]map[string]any, len(w.Targets))
 		for i, id := range w.Targets {
 			items[i] = maps.Clone(b)
@@ -383,4 +391,21 @@ func iocUpdate(sides []string, required bool) sender {
 		}
 		return falcon.Params{Query: w.Values, Body: map[string]any{"comment": w.Reason, "indicators": items}}, nil
 	}
+}
+
+// noAllowIOCs refuses a block-side update that touches an allow or
+// no_action IOC: widening or extending one lowers protection too.
+func noAllowIOCs(w WriteCall) error {
+	for ids := range slices.Chunk(w.Targets, maxQueryIDs) {
+		env, err := w.get("indicator_get_v1", falcon.Params{Query: url.Values{"ids": ids}})
+		if err != nil {
+			return fmt.Errorf("reading IOCs to check their action: %w", err)
+		}
+		for _, x := range list(env.Resources) {
+			if m, _ := x.(map[string]any); slices.Contains(iocAllow, fmt.Sprint(m["action"])) {
+				return fmt.Errorf("IOC %v has action %v; changing it is update_allow (detection-remove)", m["id"], m["action"])
+			}
+		}
+	}
+	return nil
 }
