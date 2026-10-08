@@ -9,6 +9,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/lcleveland/falcon-mcp/internal/config"
 	"github.com/lcleveland/falcon-mcp/internal/falcon"
 )
 
@@ -29,6 +30,8 @@ type StatusOutput struct {
 	// licensed" hides that scope's actions.
 	Probe     map[string]falcon.ProbeResult `json:"probe,omitempty"`
 	ProbeNote string                        `json:"probe_note,omitempty"`
+	Groups    []string                      `json:"tool_groups"`
+	Tools     map[string][]string           `json:"tools"` // visible tool -> its actions
 }
 
 // statusOp is the cheap read whose reply carries the rate-limit headers.
@@ -39,7 +42,7 @@ func registerStatus(s *mcp.Server, d Deps) {
 		Name:  "falcon_status",
 		Title: "Falcon connectivity check",
 		Description: "Check that the Falcon API client can authenticate, report the cloud and base URL, and make one " +
-			"cheap authenticated read to show the rate-limit headroom. Also lists the startup scope probe: " +
+			"cheap authenticated read to show the rate-limit headroom. Lists the enabled tool groups and each visible tool's actions. Also lists the startup scope probe: " +
 			"actions whose scope reads \"missing scope or not licensed\" are hidden; restart the server after " +
 			"granting a scope.\n\n" +
 			"Call this first when another tool fails: it tells rejected credentials apart from a token that " +
@@ -47,7 +50,17 @@ func registerStatus(s *mcp.Server, d Deps) {
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: new(true)},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, StatusOutput, error) {
 		c := d.Client
-		out := StatusOutput{}
+		out := StatusOutput{Tools: map[string][]string{"falcon_status": {}}}
+		for _, g := range config.Groups {
+			if d.Config.GroupOn(g) {
+				out.Groups = append(out.Groups, g)
+			}
+		}
+		for _, t := range Tools() {
+			if as := d.actions(t); len(as) > 0 {
+				out.Tools[t.Name] = actionNames(as)
+			}
+		}
 		if d.Probes != nil {
 			out.Probe, out.ProbeNote = d.Probes.Results, d.Probes.Note
 		}

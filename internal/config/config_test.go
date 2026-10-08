@@ -129,3 +129,22 @@ func TestLogValueRedacts(t *testing.T) {
 		t.Errorf("secret leaked: %s", b.String())
 	}
 }
+
+func TestToolGroups(t *testing.T) {
+	sec := secretFile(t, "s", "secret")
+	parse := func(args ...string) (*Config, error) {
+		c, _, err := Parse(append(args, "--client-id", "id", "--client-secret-file", sec), env(nil))
+		return c, err
+	}
+	c, err := parse()
+	if err != nil || !c.GroupOn("respond") || !c.GroupOn("ai") {
+		t.Errorf("default: %v, %v", c, err)
+	}
+	c, err = parse("--tool-groups", "hosts, intel")
+	if err != nil || !c.GroupOn("hosts") || !c.GroupOn("intel") || c.GroupOn("respond") || !c.GroupOn("core") {
+		t.Errorf("hosts,intel: %v, %v", c.Groups, err)
+	}
+	if _, err := parse("--tool-groups", "hosts,nope"); err == nil || !strings.Contains(err.Error(), "unknown group") {
+		t.Errorf("bad group: %v", err)
+	}
+}

@@ -1,0 +1,4 @@
+{"meta": {"pagination": {"limit": 2, "total": 3, "after": "after-token-2"}}, "resources": [
+  {"id": "asset-1", "hostname": "nas-gamma", "entity_type": "managed", "platform_name": "Linux", "os_version": "Debian 12", "last_seen_timestamp": "2026-10-03T00:00:00Z", "os_security": {"secure_boot_enabled_status": "Yes"}},
+  {"id": "asset-2", "hostname": "kiosk-delta", "entity_type": "managed", "platform_name": "Windows", "os_version": "Windows 10", "last_seen_timestamp": "2026-10-03T01:00:00Z"}
+], "errors": []}

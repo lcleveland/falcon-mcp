@@ -6,6 +6,7 @@
 package config
 
 import (
+	"cmp"
 	"errors"
 	"flag"
 	"fmt"
@@ -23,6 +24,9 @@ import (
 	"github.com/lcleveland/falcon-mcp/internal/falcon"
 )
 
+// Groups are the tool groups --tool-groups may name. core is always on.
+var Groups = []string{"core", "respond", "hosts", "prevent", "intel", "siem", "exposure", "identity", "ai"}
+
 type Config struct {
 	// Cloud and BaseURL are both empty when the cloud is to be autodiscovered.
 	// With --base-url, Cloud stays empty.
@@ -33,6 +37,7 @@ type Config struct {
 	RequestTimeout time.Duration
 	LogLevel       slog.Level
 	NoProbe        bool
+	Groups         []string // empty means all
 
 	ShowVersion bool
 }
@@ -50,6 +55,7 @@ func (c *Config) LogValue() slog.Value {
 		slog.Bool("client_secret_set", c.ClientSecret != ""),
 		slog.Duration("request_timeout", c.RequestTimeout),
 		slog.Bool("no_probe", c.NoProbe),
+		slog.Any("groups", c.Groups),
 	)
 }
 
@@ -59,6 +65,7 @@ func Parse(args []string, getenv func(string) string) (*Config, []string, error)
 	var (
 		c                                    Config
 		rawURL, idFile, secretFile, logLevel string
+		groups                               string
 		warnings                             []string
 	)
 	clouds := slices.Sorted(maps.Keys(falcon.Clouds))
@@ -71,7 +78,8 @@ func Parse(args []string, getenv func(string) string) (*Config, []string, error)
 	fs.StringVar(&idFile, "client-id-file", getenv("FALCON_CLIENT_ID_FILE"), "file holding the client ID, instead of --client-id (env FALCON_CLIENT_ID_FILE)")
 	fs.StringVar(&secretFile, "client-secret-file", getenv("FALCON_CLIENT_SECRET_FILE"), "file holding the client secret (env FALCON_CLIENT_SECRET_FILE)")
 	fs.DurationVar(&c.RequestTimeout, "request-timeout", 30*time.Second, "per-request timeout to Falcon")
-	fs.StringVar(&logLevel, "log-level", or(getenv("FALCON_MCP_LOG_LEVEL"), "info"), "debug|info|warn|error (env FALCON_MCP_LOG_LEVEL)")
+	fs.StringVar(&logLevel, "log-level", cmp.Or(getenv("FALCON_MCP_LOG_LEVEL"), "info"), "debug|info|warn|error (env FALCON_MCP_LOG_LEVEL)")
+	fs.StringVar(&groups, "tool-groups", "", "comma-separated tool groups to enable (default all): "+strings.Join(Groups, ","))
 	fs.BoolVar(&c.NoProbe, "no-probe", false, "skip the startup scope probe and show every action")
 	fs.BoolVar(&c.ShowVersion, "version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
@@ -107,6 +115,16 @@ func Parse(args []string, getenv func(string) string) (*Config, []string, error)
 			return nil, nil, err
 		}
 		c.BaseURL = u
+	}
+
+	if groups != "" {
+		for g := range strings.SplitSeq(groups, ",") {
+			g = strings.TrimSpace(g)
+			if !slices.Contains(Groups, g) {
+				return nil, nil, fmt.Errorf("--tool-groups: unknown group %q (want %s)", g, strings.Join(Groups, ","))
+			}
+			c.Groups = append(c.Groups, g)
+		}
 	}
 
 	var err error
@@ -155,6 +173,11 @@ func baseURL(raw string) (*url.URL, error) {
 	return u, nil
 }
 
+// GroupOn reports whether a tool group is on.
+func (c *Config) GroupOn(group string) bool {
+	return group == "core" || len(c.Groups) == 0 || slices.Contains(c.Groups, group)
+}
+
 func readSecret(path string) (string, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -178,11 +201,4 @@ func loopback(addr string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
-}
-
-func or(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
 }

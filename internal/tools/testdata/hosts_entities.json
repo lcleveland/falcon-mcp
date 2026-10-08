@@ -1,0 +1,4 @@
+{"meta": {}, "resources": [
+  {"device_id": "aid-0001", "hostname": "ws-alpha", "platform_name": "Windows", "os_version": "Windows 11", "local_ip": "10.0.0.11", "last_seen": "2026-10-01T12:00:00+02:00", "status": "normal", "agent_version": "7.20.1", "tags": ["SensorGroupingTags/lab"], "bios_version": "1.2.3", "device_policies": {"prevention": {"policy_id": "pol-1", "applied": true}}},
+  {"device_id": "aid-0002", "hostname": "srv-beta", "platform_name": "Linux", "os_version": "Debian 12", "local_ip": "10.0.0.12", "last_seen": "2026-10-02T08:30:00Z", "status": "contained", "agent_version": "7.20.1", "tags": [], "bios_version": "4.5.6", "device_policies": {"prevention": {"policy_id": "pol-2", "applied": false}}}
+], "errors": []}

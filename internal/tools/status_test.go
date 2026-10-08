@@ -1,11 +1,8 @@
 package tools
 
 import (
-	"context"
-	"encoding/json"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -15,51 +12,21 @@ import (
 	"github.com/lcleveland/falcon-mcp/internal/falcon"
 )
 
-// session starts a fake Falcon (token endpoint answering tokenStatus, plus h)
-// and an in-memory MCP client/server pair.
+// session is the status tests' server: a made-up probe result and no
+// group filter.
 func session(t *testing.T, tokenStatus int, h http.HandlerFunc) *mcp.ClientSession {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/oauth2/token" {
-			w.WriteHeader(tokenStatus)
-			io.WriteString(w, `{"access_token":"tok","expires_in":1799}`)
-			return
-		}
-		h(w, r)
-	}))
-	t.Cleanup(srv.Close)
-	c := falcon.New("eu-1", srv.URL, "id", "secret", srv.Client(), nil)
-	c.RetryDelay = 0
-
-	s := mcp.NewServer(&mcp.Implementation{Name: "test"}, nil)
 	probes := &falcon.Probes{Results: map[string]falcon.ProbeResult{
 		"Hosts:read":  {State: falcon.ProbeOK},
 		"Alerts:read": {State: falcon.ProbeMissing, Status: 403},
 	}}
-	Register(s, Deps{Client: c, Config: &config.Config{}, Probes: probes})
-	st, ct := mcp.NewInMemoryTransports()
-	ctx := context.Background()
-	if _, err := s.Connect(ctx, st, nil); err != nil {
-		t.Fatal(err)
-	}
-	cs, err := mcp.NewClient(&mcp.Implementation{Name: "client"}, nil).Connect(ctx, ct, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { cs.Close() })
-	return cs
+	return sessionWith(t, &config.Config{}, probes, tokenStatus, h)
 }
 
 func call(t *testing.T, cs *mcp.ClientSession, name string) (map[string]any, bool) {
 	t.Helper()
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: name})
-	if err != nil {
-		t.Fatalf("%s: %v", name, err)
-	}
-	var out map[string]any
-	b, _ := json.Marshal(res.StructuredContent)
-	json.Unmarshal(b, &out)
-	return out, res.IsError
+	out, isErr, _ := callTool(t, cs, name, nil)
+	return out, isErr
 }
 
 func TestStatus(t *testing.T) {
@@ -79,6 +46,12 @@ func TestStatus(t *testing.T) {
 	}
 	if p, _ := out["probe"].(map[string]any); p["Alerts:read"].(map[string]any)["state"] != falcon.ProbeMissing || p["Hosts:read"].(map[string]any)["state"] != falcon.ProbeOK {
 		t.Errorf("probe = %v", out["probe"])
+	}
+	if tl, _ := out["tools"].(map[string]any); tl["falcon_alert"] != nil || tl["falcon_host"] == nil || tl["falcon_status"] == nil {
+		t.Errorf("tools = %v", out["tools"])
+	}
+	if g, _ := out["tool_groups"].([]any); len(g) != len(config.Groups) {
+		t.Errorf("tool_groups = %v", out["tool_groups"])
 	}
 	if query != "/devices/queries/devices/v1?limit=1" {
 		t.Errorf("probe = %s", query)
