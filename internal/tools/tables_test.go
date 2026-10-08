@@ -20,7 +20,11 @@ import (
 func TestEveryActionCallsItsRoute(t *testing.T) {
 	var mu sync.Mutex
 	var seen []request
-	cs := sessionWith(t, &config.Config{}, nil, http.StatusCreated, func(w http.ResponseWriter, r *http.Request) {
+	all := &config.Config{Allow: map[string]bool{}}
+	for _, c := range config.Capabilities {
+		all.Allow[c] = true
+	}
+	cs := sessionWith(t, all, nil, http.StatusCreated, func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		seen = append(seen, request{Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery})
 		mu.Unlock()
@@ -28,7 +32,7 @@ func TestEveryActionCallsItsRoute(t *testing.T) {
 	})
 	for _, tl := range Tools() {
 		for _, a := range tl.Actions {
-			if a.Kind == Custom || a.Kind == Write || a.Capability != "" {
+			if a.Kind == Custom || a.Kind == Write {
 				continue // tested on their own
 			}
 			args := map[string]any{"action": a.Name}

@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/lcleveland/falcon-mcp/internal/falcon"
 )
@@ -80,25 +81,25 @@ var respondTools = []Tool{
 			{Name: "get_session", Help: "full sessions by id (ids).", Kind: Get, Op: "RTR_ListSessions", IDs: "body:ids"},
 
 			{Name: "init_session", Help: "open an RTR session on host id (a device id); returns its session_id. Sessions close after 10 idle minutes.",
-				Kind: Write, Capability: "rtr-read", Op: "RTR_InitSession", Inputs: []string{"id"}, Send: rtrHostBody},
+				Kind: Write, Capability: "rtr-read", Op: "RTR_InitSession", Inputs: []string{"id"}, Send: rtrHost},
 			{Name: "pulse_session", Help: "keep the RTR session on host id (a device id) open.",
-				Kind: Write, Capability: "rtr-read", Op: "RTR_PulseSession", Inputs: []string{"id"}, Send: rtrHostBody},
+				Kind: Write, Capability: "rtr-read", Op: "RTR_PulseSession", Inputs: []string{"id"}, Send: rtrHost},
 			{Name: "delete_session", Help: "close RTR session id.",
 				Kind: Write, Capability: "rtr-read", Op: "RTR_DeleteSession", Inputs: []string{"id"}, Send: rtrDeleteSession},
 			{Name: "run_command", Help: "run a read-only command in RTR session id; command is one of: " + strings.Join(rtrRead, ", ") + ".",
-				Kind: Write, Capability: "rtr-read", Op: "RTR_ExecuteCommand", Inputs: []string{"id", "command"}, Send: rtrRun},
+				Kind: Write, Capability: "rtr-read", Op: "RTR_ExecuteCommand", Inputs: []string{"id", "command"}, Send: rtrRun("session_id")},
 			{Name: "check_command_status", Help: "a run_command's status and output: ids [cloud_request_id], params sequence_id (0, then the next chunk).",
 				Kind: Get, Capability: "rtr-read", Op: "RTR_CheckCommandStatus", IDs: "one:cloud_request_id", Params: []string{"sequence_id"}},
-			{Name: "list_files", Help: "files collected in an RTR session (by get): ids [session_id].",
+			{Name: "list_files", Help: "files collected in an RTR session (by get): ids [session_id]. Falcon needs the RTR write scope for this.",
 				Kind: Get, Capability: "rtr-read", Op: "RTR_ListFilesV2", IDs: "one:session_id"},
-			{Name: "init_batch", Help: "open RTR sessions on hosts by device id (ids); returns batch_id and each host's session.",
+			{Name: "init_batch", Help: "open RTR sessions on hosts by device id (ids); returns batch_id and each host's session. There is no batch delete: close them with delete_session, or let them idle out after 10 minutes.",
 				Kind: Write, Capability: "rtr-read", Op: "BatchInitSessions", Target: TargetIDs, Send: rtrBatchInit},
 			{Name: "pulse_batch", Help: "keep batch id's sessions open.",
 				Kind: Write, Capability: "rtr-read", Op: "BatchRefreshSessions", Inputs: []string{"id"}, Send: rtrBatchRefresh},
 			{Name: "run_batch_command", Help: "run a read-only command on every host in batch id and wait for the output (up to 30s); same commands as run_command.",
-				Kind: Write, Capability: "rtr-read", Op: "BatchCmd", Inputs: []string{"id", "command"}, Send: rtrRun},
+				Kind: Write, Capability: "rtr-read", Op: "BatchCmd", Inputs: []string{"id", "command"}, Send: rtrRun("batch_id")},
 
-			{Name: "run_responder_command", Help: "run an active-responder command on one host id (a device id), confirm=<hostname>, in a new session; command is one of: " +
+			{Name: "run_responder_command", Help: "run an active-responder command on one host id (a device id), confirm=<hostname>, in a new session (returned as session_id; it idles out after 10 minutes); command is one of: " +
 				strings.Join(rtrRespond, ", ") + ". put takes a file already in the put-files library.",
 				Kind: Write, Capability: "rtr-respond", Op: "RTR_ExecuteActiveResponderCommand", Target: TargetHost, Inputs: []string{"command"}, Send: rtrRespondRun},
 			{Name: "check_responder_status", Help: "a run_responder_command's status and output: ids [cloud_request_id], params sequence_id (0, then the next chunk).",
@@ -202,12 +203,16 @@ func quarantine(action string) sender {
 // commands (run, runscript, put-and-run, falconscript) are on neither list.
 var (
 	rtrRead    = []string{"cat", "cd", "env", "eventlog list", "eventlog view", "filehash", "getsid", "history", "ipconfig", "ls", "netstat", "ps", "pwd", "reg query", "users"}
-	rtrRespond = []string{"cp", "get", "kill", "memdump", "mkdir", "mv", "put", "reg delete", "reg load", "reg set", "reg unload", "rm", "umount", "unmap", "xmemdump", "zip"}
+	rtrRespond = []string{"cp", "get", "kill", "memdump", "mkdir", "mv", "put", "reg delete", "reg load", "reg set", "reg unload", "rm", "umount", "xmemdump", "zip"}
 )
 
 // rtrCommand checks a command line against an allowlist and returns its
-// base command.
+// base command. Control characters are refused: a second line must not
+// ride in behind an allowed first one.
 func rtrCommand(allow []string, command string) (string, error) {
+	if strings.ContainsFunc(command, unicode.IsControl) {
+		return "", errors.New("command must be one line, with no control characters")
+	}
 	f := strings.Fields(command)
 	for _, e := range allow {
 		if ef := strings.Fields(e); len(f) >= len(ef) && slices.Equal(f[:len(ef)], ef) {
@@ -217,18 +222,20 @@ func rtrCommand(allow []string, command string) (string, error) {
 	return "", fmt.Errorf("command %q is not allowed here; allowed: %s", strings.TrimSpace(command), strings.Join(allow, ", "))
 }
 
-var errNeedsID = errors.New("this action needs id")
+func rtrHostParams(device string) falcon.Params {
+	return falcon.Params{Body: map[string]any{"device_id": device, "origin": "falcon-mcp", "queue_offline": false}}
+}
 
-func rtrHostBody(w WriteCall) (falcon.Params, error) {
+func rtrHost(w WriteCall) (falcon.Params, error) {
 	if w.ID == "" {
-		return falcon.Params{}, errNeedsID
+		return falcon.Params{}, errors.New("this action needs id, the host's device id")
 	}
-	return falcon.Params{Body: map[string]any{"device_id": w.ID, "origin": "falcon-mcp", "queue_offline": false}}, nil
+	return rtrHostParams(w.ID), nil
 }
 
 func rtrDeleteSession(w WriteCall) (falcon.Params, error) {
 	if w.ID == "" {
-		return falcon.Params{}, errNeedsID
+		return falcon.Params{}, errors.New("this action needs id, the session id")
 	}
 	return falcon.Params{Query: url.Values{"session_id": {w.ID}}}, nil
 }
@@ -239,26 +246,24 @@ func rtrBatchInit(w WriteCall) (falcon.Params, error) {
 
 func rtrBatchRefresh(w WriteCall) (falcon.Params, error) {
 	if w.ID == "" {
-		return falcon.Params{}, errNeedsID
+		return falcon.Params{}, errors.New("this action needs id, the batch id")
 	}
 	return falcon.Params{Body: map[string]any{"batch_id": w.ID}}, nil
 }
 
-// rtrRun runs a read-only command in session id (run_command) or batch id
-// (run_batch_command).
-func rtrRun(w WriteCall) (falcon.Params, error) {
-	base, err := rtrCommand(rtrRead, w.Command)
-	if err != nil {
-		return falcon.Params{}, err
+// rtrRun runs a read-only command in the session or batch named by id;
+// key says which.
+func rtrRun(key string) sender {
+	return func(w WriteCall) (falcon.Params, error) {
+		base, err := rtrCommand(rtrRead, w.Command)
+		if err != nil {
+			return falcon.Params{}, err
+		}
+		if w.ID == "" {
+			return falcon.Params{}, errors.New("this action needs id, the " + strings.TrimSuffix(key, "_id") + " id")
+		}
+		return falcon.Params{Body: map[string]any{key: w.ID, "base_command": base, "command_string": strings.TrimSpace(w.Command), "persist": false}}, nil
 	}
-	if w.ID == "" {
-		return falcon.Params{}, errNeedsID
-	}
-	key := "session_id"
-	if w.Action == "run_batch_command" {
-		key = "batch_id"
-	}
-	return falcon.Params{Body: map[string]any{key: w.ID, "base_command": base, "command_string": w.Command, "persist": false}}, nil
 }
 
 // rtrRespondRun opens a session on the confirmed host and runs the command
@@ -269,8 +274,7 @@ func rtrRespondRun(w WriteCall) (falcon.Params, error) {
 		return falcon.Params{}, err
 	}
 	host := w.Targets[0]
-	init, _ := rtrHostBody(WriteCall{Input: Input{ID: host}})
-	env, err := w.get("RTR_InitSession", init)
+	env, err := w.get("RTR_InitSession", rtrHostParams(host))
 	if err != nil {
 		return falcon.Params{}, fmt.Errorf("opening an RTR session on %s: %w", host, err)
 	}
@@ -282,5 +286,5 @@ func rtrRespondRun(w WriteCall) (falcon.Params, error) {
 	if session == "" {
 		return falcon.Params{}, fmt.Errorf("opening an RTR session on %s returned no session_id", host)
 	}
-	return falcon.Params{Body: map[string]any{"session_id": session, "device_id": host, "base_command": base, "command_string": w.Command, "persist": false}}, nil
+	return falcon.Params{Body: map[string]any{"session_id": session, "device_id": host, "base_command": base, "command_string": strings.TrimSpace(w.Command), "persist": false}}, nil
 }

@@ -18,7 +18,7 @@ const (
 
 var adminCommands = []string{"runscript -Raw=```whoami```", "run C:\\x.exe", "put-and-run x.exe", "falconscript x", "runscript -CloudFile=x"}
 
-func rtrHost() *fakeWrites {
+func rtrFake() *fakeWrites {
 	return &fakeWrites{replies: map[string]reply{
 		"POST /devices/entities/devices/v2": {200, `{"resources":[{"device_id":"aid-1","hostname":"WS-0001"}]}`},
 		"POST " + rtrSessions:               {201, `{"resources":[{"session_id":"s-9"}]}`},
@@ -28,7 +28,7 @@ func rtrHost() *fakeWrites {
 // Each capability runs only the commands on its own allowlist; admin
 // commands run under neither.
 func TestRTRAllowlists(t *testing.T) {
-	f := rtrHost()
+	f := rtrFake()
 	call, logs := writeSession(t, []string{"rtr-read", "rtr-respond"}, 0, f)
 	run := func(command string) (bool, string) {
 		_, isErr, text := call("falcon_rtr", map[string]any{"action": "run_command", "id": "s-1", "command": command, "reason": "triage"})
@@ -43,7 +43,7 @@ func TestRTRAllowlists(t *testing.T) {
 		return isErr, text
 	}
 
-	refused := append([]string{"rm C:\\x", "reg set HKLM\\x", "get C:\\x", "kill 4", "eventlog backup Security C:\\x", "", "  "}, adminCommands...)
+	refused := append([]string{"rm C:\\x", "reg set HKLM\\x", "get C:\\x", "kill 4", "eventlog backup Security C:\\x", "", "  ", "ls\nrm C:\\x", "ps\rkill 4"}, adminCommands...)
 	for _, c := range refused {
 		for name, fn := range map[string]func(string) (bool, string){"run_command": run, "run_batch_command": batch} {
 			if isErr, text := fn(c); !isErr {
@@ -87,7 +87,7 @@ func TestRTRAllowlists(t *testing.T) {
 // A responder command needs one host, confirmed by hostname, and runs in a
 // session opened on that host.
 func TestRTRRespondOneHost(t *testing.T) {
-	f := rtrHost()
+	f := rtrFake()
 	call, logs := writeSession(t, []string{"rtr-respond"}, 0, f)
 	for _, args := range []map[string]any{
 		{"id": "aid-1"},
@@ -118,7 +118,7 @@ func TestRTRRespondOneHost(t *testing.T) {
 	if exec["session_id"] != "s-9" || exec["device_id"] != "aid-1" || exec["base_command"] != "rm" || exec["command_string"] != `rm C:\evil.exe` {
 		t.Errorf("exec body = %s", w[1].Body)
 	}
-	if !strings.Contains(logs.String(), `"reason":"malware"`) {
+	if !strings.Contains(logs.String(), `"op":"RTR_InitSession"`) || !strings.Contains(logs.String(), `"reason":"malware"`) {
 		t.Errorf("log = %s", logs)
 	}
 }
@@ -156,7 +156,7 @@ func TestRTRBatchMaxBulk(t *testing.T) {
 // Commands are never retried; status checks are reads.
 func TestRTRCommandsNotRetried(t *testing.T) {
 	for _, path := range []string{rtrCommandPath, rtrResponder, rtrBatchCmd} {
-		f := rtrHost()
+		f := rtrFake()
 		f.replies["POST "+path] = reply{http.StatusBadGateway, `{"errors":[{"code":502,"message":"busy"}]}`}
 		call, _ := writeSession(t, []string{"rtr-read", "rtr-respond"}, 0, f)
 		args := map[string]any{"action": "run_command", "id": "s-1", "command": "ps", "reason": "r"}

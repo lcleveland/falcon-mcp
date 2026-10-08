@@ -39,8 +39,13 @@ func (d Deps) write(ctx context.Context, tool string, a Action, in Input) (map[s
 	if !d.Config.Allow[a.Capability] {
 		return nil, fmt.Errorf("the %s capability is disabled by the operator", a.Capability)
 	}
-	w := WriteCall{Input: in, Reason: strings.TrimSpace(in.Reason), Values: url.Values{},
-		get: func(op string, p falcon.Params) (*envelope, error) { return d.call(ctx, op, p) }}
+	w := WriteCall{Input: in, Reason: strings.TrimSpace(in.Reason), Values: url.Values{}}
+	w.get = func(op string, p falcon.Params) (*envelope, error) {
+		if o, _ := falcon.Lookup(op); o.Write {
+			d.Log.Info("falcon write sending", "tool", tool, "action", a.Name, "capability", a.Capability, "reason", w.Reason, "op", op, "id", in.ID)
+		}
+		return d.call(ctx, op, p)
+	}
 	if w.Reason == "" {
 		return nil, errors.New("reason is required for writes; say why, it is recorded in the audit log")
 	}
