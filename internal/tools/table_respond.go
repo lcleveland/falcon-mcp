@@ -2,7 +2,9 @@ package tools
 
 import (
 	"errors"
+	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/lcleveland/falcon-mcp/internal/falcon"
@@ -64,7 +66,9 @@ var respondTools = []Tool{
 				Kind: Write, Capability: "triage", Op: "entities_case_tags_delete_v1", Inputs: []string{"id", "tags"}, Send: caseTags(false)},
 		}},
 	{Name: "falcon_rtr", Group: "respond", Title: "Real Time Response", Guides: []string{"falcon://rtr/workflows/investigation-guide"},
-		Description: "Real Time Response sessions and their audit trail. Opening sessions and running commands are separate, opt-in capabilities.",
+		Description: "Real Time Response sessions and their audit trail, and, when the operator allows, read-only commands on hosts (rtr-read) " +
+			"and active-responder commands on one host at a time (rtr-respond). RTR admin, runscript and library uploads are never available. " +
+			"RTR has no comment fields: the reason is audit-logged only. Commands run asynchronously: poll the status action with the cloud_request_id they return.",
 		Actions: []Action{
 			{Name: "search_sessions", Help: "RTR sessions matching filter.", Kind: Search,
 				Op: "RTR_ListAllSessions", Hydrate: "RTR_ListSessions", IDs: "body:ids", Brief: sessionBrief,
@@ -74,6 +78,31 @@ var respondTools = []Tool{
 			{Name: "aggregate_sessions", Help: "session buckets; body is a list of aggregation requests.", Kind: Aggregate, Op: "RTR_AggregateSessions",
 				Guide: "falcon://rtr/sessions/aggregate-guide"},
 			{Name: "get_session", Help: "full sessions by id (ids).", Kind: Get, Op: "RTR_ListSessions", IDs: "body:ids"},
+
+			{Name: "init_session", Help: "open an RTR session on host id (a device id); returns its session_id. Sessions close after 10 idle minutes.",
+				Kind: Write, Capability: "rtr-read", Op: "RTR_InitSession", Inputs: []string{"id"}, Send: rtrHostBody},
+			{Name: "pulse_session", Help: "keep the RTR session on host id (a device id) open.",
+				Kind: Write, Capability: "rtr-read", Op: "RTR_PulseSession", Inputs: []string{"id"}, Send: rtrHostBody},
+			{Name: "delete_session", Help: "close RTR session id.",
+				Kind: Write, Capability: "rtr-read", Op: "RTR_DeleteSession", Inputs: []string{"id"}, Send: rtrDeleteSession},
+			{Name: "run_command", Help: "run a read-only command in RTR session id; command is one of: " + strings.Join(rtrRead, ", ") + ".",
+				Kind: Write, Capability: "rtr-read", Op: "RTR_ExecuteCommand", Inputs: []string{"id", "command"}, Send: rtrRun},
+			{Name: "check_command_status", Help: "a run_command's status and output: ids [cloud_request_id], params sequence_id (0, then the next chunk).",
+				Kind: Get, Capability: "rtr-read", Op: "RTR_CheckCommandStatus", IDs: "one:cloud_request_id", Params: []string{"sequence_id"}},
+			{Name: "list_files", Help: "files collected in an RTR session (by get): ids [session_id].",
+				Kind: Get, Capability: "rtr-read", Op: "RTR_ListFilesV2", IDs: "one:session_id"},
+			{Name: "init_batch", Help: "open RTR sessions on hosts by device id (ids); returns batch_id and each host's session.",
+				Kind: Write, Capability: "rtr-read", Op: "BatchInitSessions", Target: TargetIDs, Send: rtrBatchInit},
+			{Name: "pulse_batch", Help: "keep batch id's sessions open.",
+				Kind: Write, Capability: "rtr-read", Op: "BatchRefreshSessions", Inputs: []string{"id"}, Send: rtrBatchRefresh},
+			{Name: "run_batch_command", Help: "run a read-only command on every host in batch id and wait for the output (up to 30s); same commands as run_command.",
+				Kind: Write, Capability: "rtr-read", Op: "BatchCmd", Inputs: []string{"id", "command"}, Send: rtrRun},
+
+			{Name: "run_responder_command", Help: "run an active-responder command on one host id (a device id), confirm=<hostname>, in a new session; command is one of: " +
+				strings.Join(rtrRespond, ", ") + ". put takes a file already in the put-files library.",
+				Kind: Write, Capability: "rtr-respond", Op: "RTR_ExecuteActiveResponderCommand", Target: TargetHost, Inputs: []string{"command"}, Send: rtrRespondRun},
+			{Name: "check_responder_status", Help: "a run_responder_command's status and output: ids [cloud_request_id], params sequence_id (0, then the next chunk).",
+				Kind: Get, Capability: "rtr-respond", Op: "RTR_CheckActiveResponderCommandStatus", IDs: "one:cloud_request_id", Params: []string{"sequence_id"}},
 		}},
 	{Name: "falcon_quarantine", Group: "respond", Title: "Quarantined files",
 		Description: "Files the Falcon sensor quarantined on hosts.",
@@ -166,4 +195,92 @@ func quarantine(action string) sender {
 	return func(w WriteCall) (falcon.Params, error) {
 		return falcon.Params{Body: map[string]any{"action": action, "ids": w.Targets, "comment": w.Reason}}, nil
 	}
+}
+
+// Each RTR capability runs only its own commands. An entry of two words
+// also pins the subcommand: reg query reads, reg set does not. Admin
+// commands (run, runscript, put-and-run, falconscript) are on neither list.
+var (
+	rtrRead    = []string{"cat", "cd", "env", "eventlog list", "eventlog view", "filehash", "getsid", "history", "ipconfig", "ls", "netstat", "ps", "pwd", "reg query", "users"}
+	rtrRespond = []string{"cp", "get", "kill", "memdump", "mkdir", "mv", "put", "reg delete", "reg load", "reg set", "reg unload", "rm", "umount", "unmap", "xmemdump", "zip"}
+)
+
+// rtrCommand checks a command line against an allowlist and returns its
+// base command.
+func rtrCommand(allow []string, command string) (string, error) {
+	f := strings.Fields(command)
+	for _, e := range allow {
+		if ef := strings.Fields(e); len(f) >= len(ef) && slices.Equal(f[:len(ef)], ef) {
+			return f[0], nil
+		}
+	}
+	return "", fmt.Errorf("command %q is not allowed here; allowed: %s", strings.TrimSpace(command), strings.Join(allow, ", "))
+}
+
+var errNeedsID = errors.New("this action needs id")
+
+func rtrHostBody(w WriteCall) (falcon.Params, error) {
+	if w.ID == "" {
+		return falcon.Params{}, errNeedsID
+	}
+	return falcon.Params{Body: map[string]any{"device_id": w.ID, "origin": "falcon-mcp", "queue_offline": false}}, nil
+}
+
+func rtrDeleteSession(w WriteCall) (falcon.Params, error) {
+	if w.ID == "" {
+		return falcon.Params{}, errNeedsID
+	}
+	return falcon.Params{Query: url.Values{"session_id": {w.ID}}}, nil
+}
+
+func rtrBatchInit(w WriteCall) (falcon.Params, error) {
+	return falcon.Params{Body: map[string]any{"host_ids": w.Targets, "queue_offline": false}}, nil
+}
+
+func rtrBatchRefresh(w WriteCall) (falcon.Params, error) {
+	if w.ID == "" {
+		return falcon.Params{}, errNeedsID
+	}
+	return falcon.Params{Body: map[string]any{"batch_id": w.ID}}, nil
+}
+
+// rtrRun runs a read-only command in session id (run_command) or batch id
+// (run_batch_command).
+func rtrRun(w WriteCall) (falcon.Params, error) {
+	base, err := rtrCommand(rtrRead, w.Command)
+	if err != nil {
+		return falcon.Params{}, err
+	}
+	if w.ID == "" {
+		return falcon.Params{}, errNeedsID
+	}
+	key := "session_id"
+	if w.Action == "run_batch_command" {
+		key = "batch_id"
+	}
+	return falcon.Params{Body: map[string]any{key: w.ID, "base_command": base, "command_string": w.Command, "persist": false}}, nil
+}
+
+// rtrRespondRun opens a session on the confirmed host and runs the command
+// there, so the command cannot land on another host's session.
+func rtrRespondRun(w WriteCall) (falcon.Params, error) {
+	base, err := rtrCommand(rtrRespond, w.Command)
+	if err != nil {
+		return falcon.Params{}, err
+	}
+	host := w.Targets[0]
+	init, _ := rtrHostBody(WriteCall{Input: Input{ID: host}})
+	env, err := w.get("RTR_InitSession", init)
+	if err != nil {
+		return falcon.Params{}, fmt.Errorf("opening an RTR session on %s: %w", host, err)
+	}
+	var session string
+	if l := list(env.Resources); len(l) > 0 {
+		m, _ := l[0].(map[string]any)
+		session, _ = m["session_id"].(string)
+	}
+	if session == "" {
+		return falcon.Params{}, fmt.Errorf("opening an RTR session on %s returned no session_id", host)
+	}
+	return falcon.Params{Body: map[string]any{"session_id": session, "device_id": host, "base_command": base, "command_string": w.Command, "persist": false}}, nil
 }

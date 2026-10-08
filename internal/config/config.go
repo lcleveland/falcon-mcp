@@ -29,7 +29,7 @@ var Groups = []string{"core", "respond", "hosts", "prevent", "intel", "siem", "e
 
 // Capabilities are the opt-in write classes, each enabled by --allow-<name>.
 // See docs/adr/0002-capability-flags-over-falcon-scopes.md.
-var Capabilities = []string{"triage", "host-tags", "containment", "detection-add", "detection-remove", "fleet-config", "destructive", "workflows"}
+var Capabilities = []string{"triage", "host-tags", "containment", "detection-add", "detection-remove", "fleet-config", "rtr-read", "rtr-respond", "destructive", "workflows"}
 
 type Config struct {
 	// Cloud and BaseURL are both empty when the cloud is to be autodiscovered.

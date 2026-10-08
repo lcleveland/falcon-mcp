@@ -391,6 +391,10 @@ func TestCapabilityMap(t *testing.T) {
 		"falcon_host hide_host": "destructive", "falcon_host unhide_host": "destructive", "falcon_quarantine delete": "destructive",
 
 		"falcon_workflow execute": "workflows", "falcon_report launch": "workflows",
+
+		"falcon_rtr init_session": "rtr-read", "falcon_rtr pulse_session": "rtr-read", "falcon_rtr delete_session": "rtr-read",
+		"falcon_rtr run_command": "rtr-read", "falcon_rtr init_batch": "rtr-read", "falcon_rtr pulse_batch": "rtr-read",
+		"falcon_rtr run_batch_command": "rtr-read", "falcon_rtr run_responder_command": "rtr-respond",
 	}
 	for _, typ := range []string{"ioa", "ml", "sensor_visibility", "certificate"} {
 		for _, a := range []string{"create", "update", "delete"} {

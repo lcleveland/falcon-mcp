@@ -28,7 +28,7 @@ func TestEveryActionCallsItsRoute(t *testing.T) {
 	})
 	for _, tl := range Tools() {
 		for _, a := range tl.Actions {
-			if a.Kind == Custom || a.Kind == Write {
+			if a.Kind == Custom || a.Kind == Write || a.Capability != "" {
 				continue // tested on their own
 			}
 			args := map[string]any{"action": a.Name}

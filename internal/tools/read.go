@@ -53,6 +53,7 @@ type Input struct {
 	Reason  string   `json:"reason,omitempty" jsonschema:"required for writes: why, recorded in the audit log and sent to Falcon's comment field where it has one"`
 	Confirm string   `json:"confirm,omitempty" jsonschema:"for a write by filter, the number of records it matches; for a host action, the host's hostname"`
 	Tags    []string `json:"tags,omitempty" jsonschema:"tags to add or remove"`
+	Command string   `json:"command,omitempty" jsonschema:"an RTR command line, e.g. ls C:\\Windows; the action help lists the allowed commands"`
 }
 
 // inputs are the Input fields an action reads, by JSON name, beyond action
@@ -142,7 +143,12 @@ type envelope struct {
 		} `json:"pagination"`
 	} `json:"meta"`
 	Resources any `json:"resources"`
-	Errors    []struct {
+	// RTR batches: the batch id, and BatchCmd's results by host.
+	BatchID  string `json:"batch_id"`
+	Combined struct {
+		Resources any `json:"resources"`
+	} `json:"combined"`
+	Errors []struct {
 		Message string `json:"message"`
 	} `json:"errors"`
 }

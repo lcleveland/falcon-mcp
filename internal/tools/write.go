@@ -21,7 +21,8 @@ type WriteCall struct {
 	Values  url.Values // the params input, checked against Action.Params
 
 	// get runs a read, for a write that must send back state it has not
-	// been given (a version, the rest of a record).
+	// been given (a version, the rest of a record), or opens the RTR
+	// session a responder command runs in. Nothing it calls is retried.
 	get func(op string, p falcon.Params) (*envelope, error)
 }
 
@@ -62,6 +63,9 @@ func (d Deps) write(ctx context.Context, tool string, a Action, in Input) (map[s
 	if len(w.Targets) > 0 {
 		audit = append(audit, "ids", w.Targets)
 	}
+	if in.Command != "" {
+		audit = append(audit, "command", in.Command)
+	}
 	// Logged before sending too, so a write cut off mid-call still has a record.
 	d.Log.Info("falcon write sending", audit...)
 	env, err := d.call(ctx, a.Op, p)
@@ -74,7 +78,17 @@ func (d Deps) write(ctx context.Context, tool string, a Action, in Input) (map[s
 		return nil, err
 	}
 	d.Log.Info("falcon write", append(audit, "trace_id", env.Meta.TraceID)...)
-	out := shape(list(env.Resources), nil, "", noteGet, env)
+	res := env.Resources
+	if res == nil {
+		res = env.Combined.Resources
+	}
+	out := shape(list(res), nil, "", noteGet, env)
+	if m, ok := res.(map[string]any); ok { // RTR batches answer by host id
+		maps.Copy(out, capObject(times(m)))
+	}
+	if env.BatchID != "" {
+		out["batch_id"] = env.BatchID
+	}
 	if env.Meta.TraceID != "" {
 		out["trace_id"] = env.Meta.TraceID
 	}
