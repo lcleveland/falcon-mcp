@@ -336,6 +336,9 @@ func TestToolTable(t *testing.T) {
 			if !ok || op.Write != (a.Kind == Write) || (a.Kind == Write) != (a.Capability != "" && a.Send != nil) {
 				t.Errorf("%s.%s: op %s missing, or its write bit, capability or Send disagrees with the kind", tl.Name, a.Name, a.Op)
 			}
+			if a.Capability != "" && !slices.Contains(config.Capabilities, a.Capability) {
+				t.Errorf("%s.%s: unknown capability %q", tl.Name, a.Name, a.Capability)
+			}
 			if a.Resolve != "" {
 				if r, ok := falcon.Lookup(a.Resolve); !ok || r.Write || r.Scope != falcon.FamilyRead(op.Scope) {
 					t.Errorf("%s.%s: resolve op %s: %+v", tl.Name, a.Name, a.Resolve, r)

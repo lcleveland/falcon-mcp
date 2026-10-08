@@ -42,6 +42,14 @@ func (f *fakeWrites) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, rp.body)
 }
 
+func (f *fakeWrites) reset() { f.mu.Lock(); f.seen = nil; f.mu.Unlock() }
+
+func (f *fakeWrites) requests() []request {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]request(nil), f.seen...)
+}
+
 // writes are the requests that were not reads.
 func (f *fakeWrites) writes() []request {
 	f.mu.Lock()
@@ -162,11 +170,16 @@ func TestWriteNeedsReasonAndForwardsIt(t *testing.T) {
 	}
 
 	// A comment the caller gives carries the reason too.
-	f.mu.Lock()
-	f.seen = nil
-	f.mu.Unlock()
+	f.reset()
 	call("falcon_alert", map[string]any{"action": "update", "ids": []string{"a:1"}, "params": map[string]any{"append_comment": "seen on 3 hosts"}, "reason": "triage"})
 	if w := f.writes(); len(w) != 1 || !strings.Contains(w[0].Body, `"value":"seen on 3 hosts\n\nReason: triage"`) || strings.Count(w[0].Body, "append_comment") != 1 {
+		t.Errorf("writes = %+v", w)
+	}
+
+	// Several comments and the reason go as one.
+	f.reset()
+	call("falcon_alert", map[string]any{"action": "update", "ids": []string{"a:1"}, "params": map[string]any{"append_comment": []any{"one", "two"}}, "reason": "r"})
+	if w := f.writes(); len(w) != 1 || !strings.Contains(w[0].Body, `"value":"one\n\ntwo\n\nReason: r"`) || strings.Count(w[0].Body, "append_comment") != 1 {
 		t.Errorf("writes = %+v", w)
 	}
 
@@ -331,9 +344,7 @@ func TestCaseWrites(t *testing.T) {
 		{map[string]any{"action": "add_tags", "id": "c1", "tags": []string{"t"}}, "POST", "/cases/entities/case-tags/v1", `{"id":"c1","tags":["t"]}`},
 		{map[string]any{"action": "remove_tags", "id": "c1", "tags": []string{"t"}}, "DELETE", "/cases/entities/case-tags/v1", ``},
 	} {
-		f.mu.Lock()
-		f.seen = nil
-		f.mu.Unlock()
+		f.reset()
 		c.args["reason"] = "r"
 		if _, isErr, text := call("falcon_case", c.args); isErr {
 			t.Errorf("%v: %s", c.args, text)
@@ -345,5 +356,9 @@ func TestCaseWrites(t *testing.T) {
 	}
 	if q := query(t, f.seen[0].Query); q.Get("id") != "c1" || q.Get("tag") != "t" {
 		t.Errorf("remove_tags query = %s", f.seen[0].Query)
+	}
+	f.reset()
+	if _, isErr, _ := call("falcon_case", map[string]any{"action": "add_alert_evidence", "id": "c1", "filter": "x", "reason": "r"}); !isErr || len(f.requests()) != 0 {
+		t.Errorf("filter on an ids-only write: %v, sent %+v", isErr, f.requests())
 	}
 }

@@ -65,7 +65,7 @@ type Action struct {
 	MaxIDs     int    // Falcon's own per-call id limit, when below --max-bulk
 	// Send builds the call, forwarding the reason where Falcon has a
 	// comment field.
-	Send func(WriteCall) (falcon.Params, error)
+	Send sender
 }
 
 // Target is what a write acts on.

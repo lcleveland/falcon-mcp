@@ -3,6 +3,7 @@ package tools
 import (
 	"errors"
 	"net/url"
+	"strings"
 
 	"github.com/lcleveland/falcon-mcp/internal/falcon"
 )
@@ -49,7 +50,7 @@ var respondTools = []Tool{
 				Guide: "falcon://cases/aggregates/fql-guide"},
 			{Name: "aggregate_file_details", Help: "file buckets for case ids (ids); body is a list of aggregation requests.", Kind: Aggregate, Op: "aggregates_file_details_post_v1", TakesIDs: true,
 				Guide: "falcon://cases/file-aggregates/fql-guide"},
-			{Name: "create", Help: "create a case; body {name, description, severity, status, assigned_to_user_uuid, tags, template: {id}, evidence: {alerts: [{id}], events: [{id}]}}.",
+			{Name: "create", Help: "create a case (case writes have no comment field: the reason is audit-logged only); body {name, description, severity, status, assigned_to_user_uuid, tags, template: {id}, evidence: {alerts: [{id}], events: [{id}]}}.",
 				Kind: Write, Capability: "triage", Op: "entities_cases_put_v2", Inputs: []string{"body"}, Send: caseCreate},
 			{Name: "update", Help: "update case id; body is the fields to set {name, description, severity, status, assigned_to_user_uuid, remove_user_assignment, custom_fields, template}.",
 				Kind: Write, Capability: "triage", Op: "entities_cases_patch_v2", Inputs: []string{"id", "body"}, Send: caseUpdate},
@@ -87,28 +88,26 @@ var respondTools = []Tool{
 }
 
 // alertParams are the alert action parameters triage may set, in the order
-// they are sent. Suppression and show_in_ui belong to other capabilities.
+// they are sent; append_comment stays last. Suppression and show_in_ui belong to other capabilities.
 var alertParams = []string{"update_status", "assign_to_uuid", "assign_to_user_id", "assign_to_name", "unassign",
 	"add_tag", "remove_tag", "remove_tags_by_prefix", "append_comment"}
 
 func alertUpdate(w WriteCall) (falcon.Params, error) {
-	if len(w.Params) == 0 {
+	if len(w.Values) == 0 {
 		return falcon.Params{}, errors.New("this action needs params: the updates to make")
 	}
+	// The caller's comments and the reason go as one comment.
+	comment := append(w.Values["append_comment"], "Reason: "+w.Reason)
+	if len(comment) == 1 {
+		comment = []string{w.Reason}
+	}
 	var ap []map[string]string
-	commented := false
-	for _, name := range alertParams {
-		for _, v := range w.Params[name] {
-			if name == "append_comment" {
-				v += "\n\nReason: " + w.Reason
-				commented = true
-			}
+	for _, name := range alertParams[:len(alertParams)-1] {
+		for _, v := range w.Values[name] {
 			ap = append(ap, map[string]string{"name": name, "value": v})
 		}
 	}
-	if !commented {
-		ap = append(ap, map[string]string{"name": "append_comment", "value": w.Reason})
-	}
+	ap = append(ap, map[string]string{"name": "append_comment", "value": strings.Join(comment, "\n\n")})
 	return falcon.Params{Body: map[string]any{"composite_ids": w.Targets, "action_parameters": ap}}, nil
 }
 
@@ -125,7 +124,7 @@ func caseUpdate(w WriteCall) (falcon.Params, error) {
 	return falcon.Params{Body: map[string]any{"id": w.ID, "fields": b}}, err
 }
 
-func caseEvidence(kind string) func(WriteCall) (falcon.Params, error) {
+func caseEvidence(kind string) sender {
 	return func(w WriteCall) (falcon.Params, error) {
 		if w.ID == "" {
 			return falcon.Params{}, errNeedsCase
@@ -138,13 +137,13 @@ func caseEvidence(kind string) func(WriteCall) (falcon.Params, error) {
 	}
 }
 
-func caseTags(add bool) func(WriteCall) (falcon.Params, error) {
+func caseTags(add bool) sender {
 	return func(w WriteCall) (falcon.Params, error) {
 		switch {
 		case w.ID == "":
 			return falcon.Params{}, errNeedsCase
 		case len(w.Tags) == 0:
-			return falcon.Params{}, errors.New("this action needs tags")
+			return falcon.Params{}, errNeedsTags
 		case add:
 			return falcon.Params{Body: map[string]any{"id": w.ID, "tags": w.Tags}}, nil
 		}

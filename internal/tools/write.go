@@ -17,8 +17,13 @@ type WriteCall struct {
 	Input
 	Targets []string   // the ids the write acts on (TargetIDs, TargetHost)
 	Reason  string     // trimmed, never empty
-	Params  url.Values // the params input, checked against Action.Params
+	Values  url.Values // the params input, checked against Action.Params
 }
+
+// sender builds a write's call from a checked WriteCall.
+type sender func(WriteCall) (falcon.Params, error)
+
+var errNeedsTags = errors.New("this action needs tags")
 
 // write runs a write action. Every write goes through here, so the
 // capability, reason, bulk cap, confirmation and audit log cannot be
@@ -28,11 +33,11 @@ func (d Deps) write(ctx context.Context, tool string, a Action, in Input) (map[s
 	if !d.Config.Allow[a.Capability] {
 		return nil, fmt.Errorf("the %s capability is disabled by the operator", a.Capability)
 	}
-	w := WriteCall{Input: in, Reason: strings.TrimSpace(in.Reason), Params: url.Values{}}
+	w := WriteCall{Input: in, Reason: strings.TrimSpace(in.Reason), Values: url.Values{}}
 	if w.Reason == "" {
 		return nil, errors.New("reason is required for writes; say why, it is recorded in the audit log")
 	}
-	if err := params(a, in, w.Params); err != nil {
+	if err := params(a, in, w.Values); err != nil {
 		return nil, err
 	}
 	var err error
@@ -51,6 +56,8 @@ func (d Deps) write(ctx context.Context, tool string, a Action, in Input) (map[s
 	if len(w.Targets) > 0 {
 		audit = append(audit, "ids", w.Targets)
 	}
+	// Logged before sending too, so a write cut off mid-call still has a record.
+	d.Log.Info("falcon write sending", audit...)
 	env, err := d.call(ctx, a.Op, p)
 	if err != nil {
 		var ae *falcon.APIError
@@ -95,6 +102,9 @@ func (d Deps) targets(ctx context.Context, a Action, in Input) ([]string, error)
 			}
 			return in.IDs, nil
 		}
+		if a.Resolve == "" {
+			return nil, errors.New("this action takes ids, not filter")
+		}
 		if len(in.IDs) > 0 {
 			return nil, errors.New("pass ids or filter, not both")
 		}
@@ -127,13 +137,14 @@ func (d Deps) bulkCap(a Action) int {
 func (d Deps) resolve(ctx context.Context, op, filter string, limit int) ([]string, error) {
 	const page = 500
 	var ids []string
-	for {
-		q := url.Values{"filter": {filter}, "limit": {strconv.Itoa(page)}, "offset": {strconv.Itoa(len(ids))}}
+	for offset := 0; ; {
+		q := url.Values{"filter": {filter}, "limit": {strconv.Itoa(page)}, "offset": {strconv.Itoa(offset)}}
 		env, err := d.call(ctx, op, falcon.Params{Query: q})
 		if err != nil {
 			return nil, fmt.Errorf("resolving filter: %w", err)
 		}
 		got := list(env.Resources)
+		offset += len(got)
 		for _, x := range got {
 			if s, ok := x.(string); ok {
 				ids = append(ids, s)
@@ -143,7 +154,7 @@ func (d Deps) resolve(ctx context.Context, op, filter string, limit int) ([]stri
 		if n := max(len(ids), deref(total)); n > limit {
 			return nil, fmt.Errorf("filter matches %d records, more than the limit of %d per write; narrow it", n, limit)
 		}
-		if len(got) < page || (total != nil && len(ids) >= *total) {
+		if len(got) < page || (total != nil && offset >= *total) {
 			return ids, nil
 		}
 	}

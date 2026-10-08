@@ -75,7 +75,7 @@ var hostsTools = []Tool{
 // maxTags is UpdateDeviceTags' limit; it fails the whole call above it.
 const maxTags = 50
 
-func hostTags(action string) func(WriteCall) (falcon.Params, error) {
+func hostTags(action string) sender {
 	return func(w WriteCall) (falcon.Params, error) {
 		tags, err := groupingTags(w.Tags)
 		if err != nil {
@@ -91,7 +91,7 @@ func hostTags(action string) func(WriteCall) (falcon.Params, error) {
 func groupingTags(tags []string) ([]string, error) {
 	const prefix = "FalconGroupingTags/"
 	if len(tags) == 0 {
-		return nil, errors.New("this action needs tags")
+		return nil, errNeedsTags
 	}
 	if len(tags) > maxTags {
 		return nil, fmt.Errorf("at most %d tags per call", maxTags)
@@ -119,7 +119,7 @@ func hasPrefixFold(s, prefix string) bool {
 
 // hostAction is a PerformActionV2 action on one host, with the reason as
 // its note.
-func hostAction(name string) func(WriteCall) (falcon.Params, error) {
+func hostAction(name string) sender {
 	return func(w WriteCall) (falcon.Params, error) {
 		return falcon.Params{Query: url.Values{"action_name": {name}}, Body: map[string]any{
 			"ids": w.Targets, "action_parameters": []map[string]string{{"name": "note", "value": w.Reason}}}}, nil
