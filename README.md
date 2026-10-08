@@ -73,7 +73,7 @@ All are off by default. A disabled capability's actions are removed from the too
 | `--allow-detection-add` | custom IOA rule and rule-group create and enable; IOC create and update; through `falcon_api`, correlation-rule create and Cloud Security suppression-rule delete |
 | `--allow-detection-remove` | exclusions of every type (create, update, delete); custom IOA disable and delete; allow-listing and deleting IOCs; quarantine release/unrelease; `falcon_host` suppress_detections, unsuppress_detections; through `falcon_api`, correlation-rule update/delete, suppression-rule create and SaaS Security check dismissal |
 | `--allow-fleet-config` | policies of every type (create, update, delete, perform, set_precedence); host groups (create, update, delete, add/remove hosts); firewall rule groups |
-| `--allow-rtr-read` | `falcon_rtr` sessions, batch sessions, listing session files, and read-only commands on live hosts: `cat`, `cd`, `env`, `eventlog list`/`view`, `filehash`, `getsid`, `history`, `ipconfig`, `ls`, `netstat`, `ps`, `pwd`, `reg query`, `users` |
+| `--allow-rtr-read` | `falcon_rtr` sessions, batch sessions, listing session files, and read-only commands on live hosts: `cat`, `cd`, `env`, `eventlog list`/`view`, `filehash`, `getsid`, `ipconfig`, `ls`, `mount`, `netstat`, `ps`, `pwd`, `reg query`, `users` (Mac and Linux) |
 | `--allow-rtr-respond` | `falcon_rtr` run_responder_command on one host: `cp`, `get`, `kill`, `memdump`, `mkdir`, `mv`, `put`, `reg` delete/load/set/unload, `rm`, `umount`, `xmemdump`, `zip` |
 | `--allow-destructive` | `falcon_host` hide_host, unhide_host; `falcon_quarantine` delete |
 | `--allow-workflows` | `falcon_workflow` execute, `falcon_report` launch; through `falcon_api`, invoking an AgentWorks agent |

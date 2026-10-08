@@ -328,8 +328,13 @@ func TestReviewFixes(t *testing.T) {
 	}
 	// AIDR reports offset+len as total: a full page still pages on.
 	out, _, _ := callTool(t, cs, "falcon_guardian", map[string]any{"action": "search_agents", "limit": 2})
-	if out["next_cursor"] == nil {
-		t.Errorf("AIDR full page has no cursor: %v", out)
+	if out["next_cursor"] == nil || out["total"] != nil {
+		t.Errorf("AIDR full page: want a cursor and no total: %v", out)
+	}
+	// Intel actors report the page size as total: same rule.
+	out, _, _ = callTool(t, cs, "falcon_intel", map[string]any{"action": "search_actors", "limit": 2})
+	if out["next_cursor"] == nil || out["total"] != nil {
+		t.Errorf("actors full page: want a cursor and no total: %v", out)
 	}
 	// Other APIs trust total.
 	out, _, _ = callTool(t, cs, "falcon_host_group", map[string]any{"action": "search", "limit": 2})
@@ -341,5 +346,30 @@ func TestReviewFixes(t *testing.T) {
 	}
 	if _, isErr, text := callTool(t, cs, "falcon_identity", map[string]any{"action": "investigate_entity", "query": "{a}", "cursor": "x"}); !isErr || !strings.Contains(text, "cursor") {
 		t.Errorf("cursor on identity: %s", text)
+	}
+}
+
+func TestZTAAuditKeepsGaps(t *testing.T) {
+	body := `{"resources":[{"average_overall_score":80,"platforms":[{"name":"Windows 11","num_aids":3,"audit":{"hvci_enabled":0.5,"kmci_enabled":1}}]}]}`
+	cs := sessionWith(t, &config.Config{}, nil, http.StatusCreated, func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, body)
+	})
+	platform := func(out map[string]any) map[string]any {
+		return out["results"].([]any)[0].(map[string]any)["platforms"].([]any)[0].(map[string]any)
+	}
+	out, isErr, text := callTool(t, cs, "falcon_zta", map[string]any{"action": "get_audit"})
+	if isErr {
+		t.Fatal(text)
+	}
+	p := platform(out)
+	if gaps, _ := p["gaps"].(map[string]any); p["audit"] != nil || len(gaps) != 1 || gaps["hvci_enabled"] != 0.5 {
+		t.Errorf("summary platform = %v", p)
+	}
+	out, _, _ = callTool(t, cs, "falcon_zta", map[string]any{"action": "get_audit", "params": map[string]any{"detail": true}})
+	if p := platform(out); len(p["audit"].(map[string]any)) != 2 {
+		t.Errorf("detail platform = %v", p)
+	}
+	if _, isErr, _ := callTool(t, cs, "falcon_zta", map[string]any{"action": "get_audit", "params": map[string]any{"x": 1}}); !isErr {
+		t.Error("unknown param accepted")
 	}
 }

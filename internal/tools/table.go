@@ -33,7 +33,7 @@ type Action struct {
 	Hydrate  string // entities op fetching the ids Op returns; "" when Op is combined
 	Paging   Paging
 	MaxLimit int      // Falcon's own page maximum, when below ours
-	Brief    []string // fields a search keeps unless fields is given; dotted paths reach nested ones
+	Brief    []string // fields a search keeps unless fields is given, and a write always keeps; dotted paths reach nested ones
 	Filter   string   // FQL always ANDed with the caller's filter
 	Guide    string   // the guide for this action's filter
 
@@ -48,8 +48,9 @@ type Action struct {
 	TakesIDs bool     // an aggregate that also takes ids
 	Params   []string // named query parameters taken from the params input, for APIs without FQL
 	NoFilter bool     // the op takes no FQL filter or sort
-	// TotalIsEnd: the API reports offset+len as total (AIDR), so a full
-	// page may have more after it.
+	// TotalIsEnd: the API's total is not the match count (AIDR reports
+	// offset+len, intel actors the page size), so a full page may have more
+	// after it, and total is not returned.
 	TotalIsEnd bool
 	Set        map[string][]string // query parameters a search always sends, e.g. Spotlight facets
 

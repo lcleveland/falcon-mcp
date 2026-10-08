@@ -81,12 +81,12 @@ var respondTools = []Tool{
 			{Name: "get_session", Help: "full sessions by id (ids).", Kind: Get, Op: "RTR_ListSessions", IDs: "body:ids"},
 
 			{Name: "init_session", Help: "open an RTR session on host id (a device id); returns its session_id. Sessions close after 10 idle minutes.",
-				Kind: Write, Capability: "rtr-read", Op: "RTR_InitSession", Inputs: []string{"id"}, Send: rtrHost},
+				Kind: Write, Capability: "rtr-read", Op: "RTR_InitSession", Inputs: []string{"id"}, Send: rtrHost, Brief: rtrSessionBrief},
 			{Name: "pulse_session", Help: "keep the RTR session on host id (a device id) open.",
-				Kind: Write, Capability: "rtr-read", Op: "RTR_PulseSession", Inputs: []string{"id"}, Send: rtrHost},
+				Kind: Write, Capability: "rtr-read", Op: "RTR_PulseSession", Inputs: []string{"id"}, Send: rtrHost, Brief: rtrSessionBrief},
 			{Name: "delete_session", Help: "close RTR session id.",
 				Kind: Write, Capability: "rtr-read", Op: "RTR_DeleteSession", Inputs: []string{"id"}, Send: rtrDeleteSession},
-			{Name: "run_command", Help: "run a read-only command in RTR session id; command is one of: " + strings.Join(rtrRead, ", ") + ".",
+			{Name: "run_command", Help: "run a read-only command in RTR session id; command is one of: " + strings.Join(rtrRead, ", ") + " (users on Mac and Linux only). " + rtrQuoting,
 				Kind: Write, Capability: "rtr-read", Op: "RTR_ExecuteCommand", Inputs: []string{"id", "command"}, Send: rtrRun("session_id")},
 			{Name: "check_command_status", Help: "a run_command's status and output: ids [cloud_request_id], params sequence_id (0, then the next chunk).",
 				Kind: Get, Capability: "rtr-read", Op: "RTR_CheckCommandStatus", IDs: "one:cloud_request_id", Params: []string{"sequence_id"}},
@@ -96,7 +96,7 @@ var respondTools = []Tool{
 				Kind: Write, Capability: "rtr-read", Op: "BatchInitSessions", Target: TargetIDs, Send: rtrBatchInit},
 			{Name: "pulse_batch", Help: "keep batch id's sessions open.",
 				Kind: Write, Capability: "rtr-read", Op: "BatchRefreshSessions", Inputs: []string{"id"}, Send: rtrBatchRefresh},
-			{Name: "run_batch_command", Help: "run a read-only command on every host in batch id and wait for the output (up to 30s); same commands as run_command.",
+			{Name: "run_batch_command", Help: "run a read-only command on every host in batch id and wait for the output (up to 30s); same commands as run_command. " + rtrQuoting,
 				Kind: Write, Capability: "rtr-read", Op: "BatchCmd", Inputs: []string{"id", "command"}, Send: rtrRun("batch_id")},
 
 			{Name: "run_responder_command", Help: "run an active-responder command on one host id (a device id), confirm=<hostname>, in a new session (returned as session_id; it idles out after 10 minutes); command is one of: " +
@@ -202,9 +202,18 @@ func quarantine(action string) sender {
 // also pins the subcommand: reg query reads, reg set does not. Admin
 // commands (run, runscript, put-and-run, falconscript) are on neither list.
 var (
-	rtrRead    = []string{"cat", "cd", "env", "eventlog list", "eventlog view", "filehash", "getsid", "history", "ipconfig", "ls", "netstat", "ps", "pwd", "reg query", "users"}
+	// rtrRead matches the read-only commands Falcon offers a session (its
+	// init scripts list), less eventlog export and backup, which write files.
+	rtrRead    = []string{"cat", "cd", "env", "eventlog list", "eventlog view", "filehash", "getsid", "ipconfig", "ls", "mount", "netstat", "ps", "pwd", "reg query", "users"}
 	rtrRespond = []string{"cp", "get", "kill", "memdump", "mkdir", "mv", "put", "reg delete", "reg load", "reg set", "reg unload", "rm", "umount", "xmemdump", "zip"}
 )
+
+// rtrSessionBrief drops the scripts list, ~10KB of command help, from a
+// session's reply.
+var rtrSessionBrief = []string{"session_id", "device_id", "platform", "pwd", "offline_queued", "existing_aid_sessions", "created_at"}
+
+// rtrQuoting is help for RTR command lines: Falcon splits arguments on spaces.
+const rtrQuoting = `Quote paths that contain spaces, e.g. reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion" ProductName.`
 
 // rtrCommand checks a command line against an allowlist and returns its
 // base command. Control characters are refused: a second line must not
