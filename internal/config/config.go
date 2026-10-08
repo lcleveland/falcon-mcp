@@ -27,6 +27,10 @@ import (
 // Groups are the tool groups --tool-groups may name. core is always on.
 var Groups = []string{"core", "respond", "hosts", "prevent", "intel", "siem", "exposure", "identity", "ai"}
 
+// Capabilities are the opt-in write classes, each enabled by --allow-<name>.
+// See docs/adr/0002-capability-flags-over-falcon-scopes.md.
+var Capabilities = []string{"triage", "host-tags", "containment"}
+
 type Config struct {
 	// Cloud and BaseURL are both empty when the cloud is to be autodiscovered.
 	// With --base-url, Cloud stays empty.
@@ -38,6 +42,9 @@ type Config struct {
 	LogLevel       slog.Level
 	NoProbe        bool
 	Groups         []string // empty means all
+
+	Allow   map[string]bool // capability -> enabled
+	MaxBulk int             // most records one write may touch
 
 	ShowVersion bool
 }
@@ -56,6 +63,8 @@ func (c *Config) LogValue() slog.Value {
 		slog.Duration("request_timeout", c.RequestTimeout),
 		slog.Bool("no_probe", c.NoProbe),
 		slog.Any("groups", c.Groups),
+		slog.Any("capabilities", c.Enabled()),
+		slog.Int("max_bulk", c.MaxBulk),
 	)
 }
 
@@ -80,6 +89,11 @@ func Parse(args []string, getenv func(string) string) (*Config, []string, error)
 	fs.DurationVar(&c.RequestTimeout, "request-timeout", 30*time.Second, "per-request timeout to Falcon")
 	fs.StringVar(&logLevel, "log-level", cmp.Or(getenv("FALCON_MCP_LOG_LEVEL"), "info"), "debug|info|warn|error (env FALCON_MCP_LOG_LEVEL)")
 	fs.StringVar(&groups, "tool-groups", "", "comma-separated tool groups to enable (default all): "+strings.Join(Groups, ","))
+	allow := map[string]*bool{}
+	for _, name := range Capabilities {
+		allow[name] = fs.Bool("allow-"+name, false, "enable the "+name+" write capability")
+	}
+	fs.IntVar(&c.MaxBulk, "max-bulk", 1000, "most records one write may touch")
 	fs.BoolVar(&c.NoProbe, "no-probe", false, "skip the startup scope probe and show every action")
 	fs.BoolVar(&c.ShowVersion, "version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
@@ -95,6 +109,13 @@ func Parse(args []string, getenv func(string) string) (*Config, []string, error)
 	}
 	if fs.NArg() > 0 {
 		return nil, nil, fmt.Errorf("unexpected argument %q", fs.Arg(0))
+	}
+	if c.MaxBulk < 1 {
+		return nil, nil, errors.New("--max-bulk must be at least 1")
+	}
+	c.Allow = map[string]bool{}
+	for name, on := range allow {
+		c.Allow[name] = *on
 	}
 	if err := c.LogLevel.UnmarshalText([]byte(logLevel)); err != nil {
 		return nil, nil, fmt.Errorf("--log-level: %w", err)
@@ -176,6 +197,17 @@ func baseURL(raw string) (*url.URL, error) {
 // GroupOn reports whether a tool group is on.
 func (c *Config) GroupOn(group string) bool {
 	return group == "core" || len(c.Groups) == 0 || slices.Contains(c.Groups, group)
+}
+
+// Enabled are the capabilities that are on, in flag order.
+func (c *Config) Enabled() []string {
+	var on []string
+	for _, name := range Capabilities {
+		if c.Allow[name] {
+			on = append(on, name)
+		}
+	}
+	return on
 }
 
 func readSecret(path string) (string, error) {

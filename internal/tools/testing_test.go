@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -21,6 +22,12 @@ import (
 // everything else h) and an in-memory MCP client/server pair.
 func sessionWith(t *testing.T, cfg *config.Config, probes *falcon.Probes, tokenStatus int, h http.HandlerFunc) *mcp.ClientSession {
 	t.Helper()
+	return sessionLog(t, cfg, probes, tokenStatus, h, nil)
+}
+
+// sessionLog is sessionWith, logging to log.
+func sessionLog(t *testing.T, cfg *config.Config, probes *falcon.Probes, tokenStatus int, h http.HandlerFunc, log *slog.Logger) *mcp.ClientSession {
+	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/oauth2/token" {
 			w.WriteHeader(tokenStatus)
@@ -34,7 +41,7 @@ func sessionWith(t *testing.T, cfg *config.Config, probes *falcon.Probes, tokenS
 	c.RetryDelay = 0
 
 	s := mcp.NewServer(&mcp.Implementation{Name: "test"}, nil)
-	Register(s, Deps{Client: c, Config: cfg, Probes: probes})
+	Register(s, Deps{Client: c, Config: cfg, Probes: probes, Log: log})
 	st, ct := mcp.NewInMemoryTransports()
 	ctx := context.Background()
 	if _, err := s.Connect(ctx, st, nil); err != nil {

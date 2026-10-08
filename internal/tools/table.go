@@ -53,10 +53,29 @@ type Action struct {
 	TotalIsEnd bool
 	Set        map[string][]string // query parameters a search always sends, e.g. Spotlight facets
 
-	// Custom: the handler, and the inputs it reads beyond action and fields.
+	// Custom: the handler, and the inputs it reads beyond action and fields
+	// (for a Write, beyond reason and its Target's).
 	Run    func(context.Context, Deps, Input) (map[string]any, error)
 	Inputs []string
+
+	// Write.
+	Capability string // the opt-in capability the write belongs to
+	Target     Target
+	Resolve    string // query op turning a filter into ids (TargetIDs); "" takes ids only
+	MaxIDs     int    // Falcon's own per-call id limit, when below --max-bulk
+	// Send builds the call, forwarding the reason where Falcon has a
+	// comment field.
+	Send func(WriteCall) (falcon.Params, error)
 }
+
+// Target is what a write acts on.
+type Target int
+
+const (
+	TargetNone Target = iota // a new or single record named in the inputs
+	TargetIDs                // records by ids, or by filter with confirm=count
+	TargetHost               // one host by id, with confirm=hostname
+)
 
 // Kind is the shape of an action.
 type Kind int
@@ -66,6 +85,7 @@ const (
 	Get                   // entities by ids
 	Aggregate             // one unpaged call: a POST body, or a GET with filter
 	Custom                // Run does the work
+	Write                 // changes tenant state; see write.go
 )
 
 // Paging is how a Falcon query pages. The model never sees it: every search

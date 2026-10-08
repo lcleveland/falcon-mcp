@@ -49,6 +49,10 @@ type Input struct {
 	Repository string         `json:"repository,omitempty" jsonschema:"NGSIEM repository or view, e.g. search-all (the default) or investigate_view"`
 	Start      string         `json:"start,omitempty" jsonschema:"search window start: RFC 3339 or relative (1h, 7d); default 1d"`
 	End        string         `json:"end,omitempty" jsonschema:"search window end: RFC 3339 or relative; default now"`
+
+	Reason  string   `json:"reason,omitempty" jsonschema:"required for writes: why, recorded in the audit log and sent to Falcon's comment field where it has one"`
+	Confirm string   `json:"confirm,omitempty" jsonschema:"for a write by filter, the number of records it matches; for a host action, the host's hostname"`
+	Tags    []string `json:"tags,omitempty" jsonschema:"tags to add or remove"`
 }
 
 // inputs are the Input fields an action reads, by JSON name, beyond action
@@ -78,6 +82,17 @@ func (a Action) inputs(typeParam string) []string {
 		}
 	case Custom:
 		in = a.Inputs
+	case Write:
+		in = append([]string{"reason"}, a.Inputs...)
+		switch a.Target {
+		case TargetIDs:
+			in = append(in, "ids")
+			if a.Resolve != "" {
+				in = append(in, "filter", "confirm")
+			}
+		case TargetHost:
+			in = append(in, "id", "confirm")
+		}
 	}
 	if len(a.Params) > 0 {
 		in = append(in, "params")
@@ -119,6 +134,7 @@ func params(a Action, in Input, q url.Values) error {
 // envelope is Falcon's reply shape.
 type envelope struct {
 	Meta struct {
+		TraceID    string `json:"trace_id"`
 		Pagination struct {
 			Total *int   `json:"total"`
 			After string `json:"after"`

@@ -322,8 +322,8 @@ func TestToolGroups(t *testing.T) {
 	}
 }
 
-// Every action resolves to a read op in the table, with its hydration op
-// under the same scope.
+// Every action resolves to an op in the table, a write exactly when the
+// action is, with its hydration or resolve op a read under its family scope.
 func TestToolTable(t *testing.T) {
 	seen := map[string]bool{}
 	for _, tl := range Tools() {
@@ -333,8 +333,13 @@ func TestToolTable(t *testing.T) {
 		seen[tl.Name] = true
 		for _, a := range tl.Actions {
 			op, ok := falcon.Lookup(a.Op)
-			if !ok || op.Write {
-				t.Errorf("%s.%s: op %s missing or a write", tl.Name, a.Name, a.Op)
+			if !ok || op.Write != (a.Kind == Write) || (a.Kind == Write) != (a.Capability != "" && a.Send != nil) {
+				t.Errorf("%s.%s: op %s missing, or its write bit, capability or Send disagrees with the kind", tl.Name, a.Name, a.Op)
+			}
+			if a.Resolve != "" {
+				if r, ok := falcon.Lookup(a.Resolve); !ok || r.Write || r.Scope != falcon.FamilyRead(op.Scope) {
+					t.Errorf("%s.%s: resolve op %s: %+v", tl.Name, a.Name, a.Resolve, r)
+				}
 			}
 			if a.Hydrate != "" {
 				if g, ok := falcon.Lookup(a.Hydrate); !ok || g.Write || g.Scope != op.Scope {

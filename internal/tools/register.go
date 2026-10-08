@@ -51,6 +51,9 @@ func (d Deps) actions(t Tool) []Action {
 	}
 	var as []Action
 	for _, a := range t.Actions {
+		if a.Capability != "" && !d.Config.Allow[a.Capability] {
+			continue
+		}
 		if d.Probes.Allows(a.scope()) {
 			as = append(as, a)
 		}
@@ -92,16 +95,24 @@ func registerTool(s *mcp.Server, d Deps, t Tool, as []Action) error {
 		}
 	}
 
+	ann := &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: new(true)}
+	if slices.ContainsFunc(as, isWrite) {
+		ann = &mcp.ToolAnnotations{OpenWorldHint: new(true)} // destructive by default
+	}
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        t.Name,
 		Title:       t.Title,
 		Description: t.Description + help(t, as),
 		InputSchema: schema,
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: new(true)},
+		Annotations: ann,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in Input) (*mcp.CallToolResult, map[string]any, error) {
 		a, err := pick(t, as, in)
 		if err != nil {
 			return nil, nil, err
+		}
+		if isWrite(a) {
+			out, err := d.write(ctx, t.Name, a, in)
+			return nil, out, err
 		}
 		out, err := d.read(ctx, t.Name, a, in)
 		return nil, out, err
@@ -161,9 +172,14 @@ func help(t Tool, as []Action) string {
 		b.WriteString("Searches return brief items (pass fields for others), total when Falcon reports it, and next_cursor when there is more; " +
 			"pass it back as cursor with the same query. ")
 	}
+	if slices.ContainsFunc(as, isWrite) {
+		b.WriteString("Writes require reason (audit-logged) and are never retried automatically. ")
+	}
 	b.WriteString("Timestamps are RFC 3339 UTC.")
 	return b.String()
 }
+
+func isWrite(a Action) bool { return a.Kind == Write }
 
 // actionNames are the distinct action names, in table order.
 func actionNames(as []Action) []string {

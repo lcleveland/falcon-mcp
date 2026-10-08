@@ -28,8 +28,8 @@ func TestEveryActionCallsItsRoute(t *testing.T) {
 	})
 	for _, tl := range Tools() {
 		for _, a := range tl.Actions {
-			if a.Kind == Custom {
-				continue // tested on their own below
+			if a.Kind == Custom || a.Kind == Write {
+				continue // tested on their own
 			}
 			args := map[string]any{"action": a.Name}
 			if tl.TypeParam != "" {

@@ -148,3 +148,25 @@ func TestToolGroups(t *testing.T) {
 		t.Errorf("bad group: %v", err)
 	}
 }
+
+func TestCapabilitiesOffByDefault(t *testing.T) {
+	secret := secretFile(t, "s", "x")
+	base := []string{"--cloud", "eu-1", "--client-id", "id", "--client-secret-file", secret}
+	c, _, err := Parse(base, env(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Enabled()) != 0 || c.MaxBulk != 1000 {
+		t.Errorf("enabled %v, max bulk %d", c.Enabled(), c.MaxBulk)
+	}
+	c, _, err = Parse(append(base, "--allow-containment", "--allow-triage", "--max-bulk", "20"), env(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fmt.Sprint(c.Enabled()); got != "[triage containment]" || c.MaxBulk != 20 {
+		t.Errorf("enabled %s, max bulk %d", got, c.MaxBulk)
+	}
+	if _, _, err := Parse(append(base, "--max-bulk", "0"), env(nil)); err == nil {
+		t.Error("--max-bulk 0 accepted")
+	}
+}

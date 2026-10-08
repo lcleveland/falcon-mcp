@@ -1,5 +1,12 @@
 package tools
 
+import (
+	"errors"
+	"net/url"
+
+	"github.com/lcleveland/falcon-mcp/internal/falcon"
+)
+
 var (
 	alertBrief      = []string{"composite_id", "product", "display_name", "status", "severity_name", "device.hostname", "host_names", "tactic", "technique", "created_timestamp"}
 	caseBrief       = []string{"id", "name", "status", "severity", "assigned_to", "created_timestamp", "updated_timestamp"}
@@ -17,6 +24,11 @@ var respondTools = []Tool{
 			{Name: "get", Help: "full alerts by composite id (ids).", Kind: Get, Op: "PostEntitiesAlertsV2", IDs: "body:composite_ids"},
 			{Name: "aggregate", Help: "counts and buckets; body is a list of aggregation requests [{field, type (terms|date_histogram|count|...), filter, size, name}].", Kind: Aggregate,
 				Op: "PostAggregatesAlertsV2", Guide: "falcon://detections/search/fql-guide"},
+			{Name: "update", Help: "update alerts by composite id (ids), or by filter with confirm=<count>. params: update_status (new|in_progress|reopened|closed), " +
+				"assign_to_uuid, assign_to_user_id, assign_to_name, unassign (true), append_comment, add_tag, remove_tag (a tag or a list), remove_tags_by_prefix. " +
+				"Resolve with a tag: true_positive, false_positive or ignored. The reason is added as a comment.",
+				Kind: Write, Capability: "triage", Op: "PatchEntitiesAlertsV3", Target: TargetIDs, Resolve: "GetQueriesAlertsV2", MaxIDs: 1000,
+				Params: alertParams, Guide: "falcon://detections/search/fql-guide", Send: alertUpdate},
 		}},
 	{Name: "falcon_case", Group: "respond", Title: "Cases",
 		Description: "Falcon cases: the investigation records that group alerts, events and notes.",
@@ -37,6 +49,18 @@ var respondTools = []Tool{
 				Guide: "falcon://cases/aggregates/fql-guide"},
 			{Name: "aggregate_file_details", Help: "file buckets for case ids (ids); body is a list of aggregation requests.", Kind: Aggregate, Op: "aggregates_file_details_post_v1", TakesIDs: true,
 				Guide: "falcon://cases/file-aggregates/fql-guide"},
+			{Name: "create", Help: "create a case; body {name, description, severity, status, assigned_to_user_uuid, tags, template: {id}, evidence: {alerts: [{id}], events: [{id}]}}.",
+				Kind: Write, Capability: "triage", Op: "entities_cases_put_v2", Inputs: []string{"body"}, Send: caseCreate},
+			{Name: "update", Help: "update case id; body is the fields to set {name, description, severity, status, assigned_to_user_uuid, remove_user_assignment, custom_fields, template}.",
+				Kind: Write, Capability: "triage", Op: "entities_cases_patch_v2", Inputs: []string{"id", "body"}, Send: caseUpdate},
+			{Name: "add_alert_evidence", Help: "attach alerts by composite id (ids) to case id.",
+				Kind: Write, Capability: "triage", Op: "entities_alert_evidence_post_v1", Target: TargetIDs, Inputs: []string{"id"}, Send: caseEvidence("alerts")},
+			{Name: "add_event_evidence", Help: "attach events by id (ids) to case id.",
+				Kind: Write, Capability: "triage", Op: "entities_event_evidence_post_v1", Target: TargetIDs, Inputs: []string{"id"}, Send: caseEvidence("events")},
+			{Name: "add_tags", Help: "add tags to case id.",
+				Kind: Write, Capability: "triage", Op: "entities_case_tags_post_v1", Inputs: []string{"id", "tags"}, Send: caseTags(true)},
+			{Name: "remove_tags", Help: "remove tags from case id.",
+				Kind: Write, Capability: "triage", Op: "entities_case_tags_delete_v1", Inputs: []string{"id", "tags"}, Send: caseTags(false)},
 		}},
 	{Name: "falcon_rtr", Group: "respond", Title: "Real Time Response", Guides: []string{"falcon://rtr/workflows/investigation-guide"},
 		Description: "Real Time Response sessions and their audit trail. Opening sessions and running commands are separate, opt-in capabilities.",
@@ -61,3 +85,71 @@ var respondTools = []Tool{
 				Op: "ActionUpdateCount", Guide: "falcon://quarantine/files/search/fql-guide"},
 		}},
 }
+
+// alertParams are the alert action parameters triage may set, in the order
+// they are sent. Suppression and show_in_ui belong to other capabilities.
+var alertParams = []string{"update_status", "assign_to_uuid", "assign_to_user_id", "assign_to_name", "unassign",
+	"add_tag", "remove_tag", "remove_tags_by_prefix", "append_comment"}
+
+func alertUpdate(w WriteCall) (falcon.Params, error) {
+	if len(w.Params) == 0 {
+		return falcon.Params{}, errors.New("this action needs params: the updates to make")
+	}
+	var ap []map[string]string
+	commented := false
+	for _, name := range alertParams {
+		for _, v := range w.Params[name] {
+			if name == "append_comment" {
+				v += "\n\nReason: " + w.Reason
+				commented = true
+			}
+			ap = append(ap, map[string]string{"name": name, "value": v})
+		}
+	}
+	if !commented {
+		ap = append(ap, map[string]string{"name": "append_comment", "value": w.Reason})
+	}
+	return falcon.Params{Body: map[string]any{"composite_ids": w.Targets, "action_parameters": ap}}, nil
+}
+
+func caseCreate(w WriteCall) (falcon.Params, error) {
+	b, err := object(w.Body)
+	return falcon.Params{Body: b}, err
+}
+
+func caseUpdate(w WriteCall) (falcon.Params, error) {
+	if w.ID == "" {
+		return falcon.Params{}, errNeedsCase
+	}
+	b, err := object(w.Body)
+	return falcon.Params{Body: map[string]any{"id": w.ID, "fields": b}}, err
+}
+
+func caseEvidence(kind string) func(WriteCall) (falcon.Params, error) {
+	return func(w WriteCall) (falcon.Params, error) {
+		if w.ID == "" {
+			return falcon.Params{}, errNeedsCase
+		}
+		ev := make([]map[string]string, len(w.Targets))
+		for i, id := range w.Targets {
+			ev[i] = map[string]string{"id": id}
+		}
+		return falcon.Params{Body: map[string]any{"id": w.ID, kind: ev}}, nil
+	}
+}
+
+func caseTags(add bool) func(WriteCall) (falcon.Params, error) {
+	return func(w WriteCall) (falcon.Params, error) {
+		switch {
+		case w.ID == "":
+			return falcon.Params{}, errNeedsCase
+		case len(w.Tags) == 0:
+			return falcon.Params{}, errors.New("this action needs tags")
+		case add:
+			return falcon.Params{Body: map[string]any{"id": w.ID, "tags": w.Tags}}, nil
+		}
+		return falcon.Params{Query: url.Values{"id": {w.ID}, "tag": w.Tags}}, nil
+	}
+}
+
+var errNeedsCase = errors.New("this action needs id, the case id")

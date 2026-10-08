@@ -34,8 +34,10 @@ type StatusOutput struct {
 	Probe     map[string]falcon.ProbeResult `json:"probe,omitempty"`
 	ProbeNote string                        `json:"probe_note,omitempty"`
 	Groups    []string                      `json:"tool_groups"`
-	Tools     map[string][]string           `json:"tools"`  // visible tool -> its actions
-	Guides    []string                      `json:"guides"` // for action=guide
+	// Enabled write capabilities; a write also needs its family's read probe.
+	Capabilities []string            `json:"capabilities"`
+	Tools        map[string][]string `json:"tools"`  // visible tool -> its actions
+	Guides       []string            `json:"guides"` // for action=guide
 }
 
 type statusInput struct {
@@ -51,7 +53,7 @@ func registerStatus(s *mcp.Server, d Deps) {
 		Name:  "falcon_status",
 		Title: "Falcon connectivity check",
 		Description: "Check that the Falcon API client can authenticate, report the cloud and base URL, and make one " +
-			"cheap authenticated read to show the rate-limit headroom. Lists the enabled tool groups and each visible tool's actions. Also lists the startup scope probe: " +
+			"cheap authenticated read to show the rate-limit headroom. Lists the enabled tool groups, write capabilities and each visible tool's actions. Also lists the startup scope probe: " +
 			"actions whose scope reads \"missing scope or not licensed\" are hidden; restart the server after " +
 			"granting a scope.\n\n" +
 			"Call this first when another tool fails: it tells rejected credentials apart from a token that " +
@@ -86,6 +88,10 @@ func (d Deps) status(ctx context.Context) (*mcp.CallToolResult, any, error) {
 		if as := d.actions(t); len(as) > 0 {
 			out.Tools[t.Name] = actionNames(as)
 		}
+	}
+	out.Capabilities = d.Config.Enabled()
+	if out.Capabilities == nil {
+		out.Capabilities = []string{}
 	}
 	for u := range d.guides() {
 		out.Guides = append(out.Guides, strings.TrimPrefix(u, "falcon://"))

@@ -1,5 +1,14 @@
 package tools
 
+import (
+	"errors"
+	"fmt"
+	"net/url"
+	"strings"
+
+	"github.com/lcleveland/falcon-mcp/internal/falcon"
+)
+
 var (
 	hostBrief  = []string{"device_id", "hostname", "platform_name", "os_version", "local_ip", "external_ip", "last_seen", "status", "agent_version", "tags"}
 	assetBrief = []string{"id", "hostname", "entity_type", "platform_name", "os_version", "current_local_ip", "last_seen_timestamp", "criticality"}
@@ -13,6 +22,16 @@ var hostsTools = []Tool{
 				Op: "QueryDevicesByFilter", Hydrate: "PostDeviceDetailsV2", IDs: "body:ids", Brief: hostBrief,
 				Guide: "falcon://hosts/search/fql-guide"},
 			{Name: "get", Help: "full hosts by device id (ids).", Kind: Get, Op: "PostDeviceDetailsV2", IDs: "body:ids"},
+			{Name: "add_tags", Help: "add Falcon grouping tags (tags, at most 50) to hosts by device id (ids), or by filter with confirm=<count>. Dynamic host groups can match tags, so this can change a host's policies.",
+				Kind: Write, Capability: "host-tags", Op: "UpdateDeviceTags", Target: TargetIDs, Resolve: "QueryDevicesByFilter", MaxIDs: 5000,
+				Inputs: []string{"tags"}, Guide: "falcon://hosts/search/fql-guide", Send: hostTags("add")},
+			{Name: "remove_tags", Help: "remove Falcon grouping tags (tags) from hosts by device id (ids), or by filter with confirm=<count>.",
+				Kind: Write, Capability: "host-tags", Op: "UpdateDeviceTags", Target: TargetIDs, Resolve: "QueryDevicesByFilter", MaxIDs: 5000,
+				Inputs: []string{"tags"}, Guide: "falcon://hosts/search/fql-guide", Send: hostTags("remove")},
+			{Name: "contain", Help: "network-contain one host by device id (id), with confirm=<its hostname>: it can then reach only the Falcon cloud. The reason is sent as the action's note.",
+				Kind: Write, Capability: "containment", Op: "PerformActionV2", Target: TargetHost, Send: hostAction("contain")},
+			{Name: "lift_containment", Help: "lift network containment from one host by device id (id), with confirm=<its hostname>. The reason is sent as the action's note.",
+				Kind: Write, Capability: "containment", Op: "PerformActionV2", Target: TargetHost, Send: hostAction("lift_containment")},
 		}},
 	{Name: "falcon_host_group", Group: "hosts", Title: "Host groups",
 		Description: "Host groups, which policies are assigned to, and their members.",
@@ -51,4 +70,58 @@ var hostsTools = []Tool{
 			{Name: "search_weekly", Help: "weekly averages; filter e.g. event_date:'2026-09-01' or period:'28'.", Kind: Aggregate,
 				Op: "GetSensorUsageWeekly", Guide: "falcon://sensor-usage/weekly/fql-guide"},
 		}},
+}
+
+// maxTags is UpdateDeviceTags' limit; it fails the whole call above it.
+const maxTags = 50
+
+func hostTags(action string) func(WriteCall) (falcon.Params, error) {
+	return func(w WriteCall) (falcon.Params, error) {
+		tags, err := groupingTags(w.Tags)
+		if err != nil {
+			return falcon.Params{}, err
+		}
+		return falcon.Params{Body: map[string]any{"action": action, "device_ids": w.Targets, "tags": tags}}, nil
+	}
+}
+
+// groupingTags puts tags in the FalconGroupingTags namespace, the one
+// UpdateDeviceTags edits; Falcon compares the prefix case-sensitively.
+// SensorGroupingTags are set by the sensor installer and cannot be changed.
+func groupingTags(tags []string) ([]string, error) {
+	const prefix = "FalconGroupingTags/"
+	if len(tags) == 0 {
+		return nil, errors.New("this action needs tags")
+	}
+	if len(tags) > maxTags {
+		return nil, fmt.Errorf("at most %d tags per call", maxTags)
+	}
+	out := make([]string, len(tags))
+	for i, t := range tags {
+		t = strings.TrimSpace(t)
+		if hasPrefixFold(t, "SensorGroupingTags/") {
+			return nil, fmt.Errorf("tag %q is a sensor grouping tag, set by the installer; only Falcon grouping tags can change", t)
+		}
+		if hasPrefixFold(t, prefix) {
+			t = t[len(prefix):]
+		}
+		if t == "" {
+			return nil, errors.New("tags must not be empty")
+		}
+		out[i] = prefix + t
+	}
+	return out, nil
+}
+
+func hasPrefixFold(s, prefix string) bool {
+	return len(s) >= len(prefix) && strings.EqualFold(s[:len(prefix)], prefix)
+}
+
+// hostAction is a PerformActionV2 action on one host, with the reason as
+// its note.
+func hostAction(name string) func(WriteCall) (falcon.Params, error) {
+	return func(w WriteCall) (falcon.Params, error) {
+		return falcon.Params{Query: url.Values{"action_name": {name}}, Body: map[string]any{
+			"ids": w.Targets, "action_parameters": []map[string]string{{"name": "note", "value": w.Reason}}}}, nil
+	}
 }
