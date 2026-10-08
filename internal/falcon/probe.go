@@ -13,8 +13,9 @@ import (
 // probePath fills the path of a probe route that has parameters. Plain
 // NGSIEM has no parameterless read: its GETs all sit under
 // /humio/api/v1/repositories/{repository}, and the /ngsiem-content routes
-// need their own scopes (NGSIEM Saved Queries, Dashboards, ...). A job that
-// does not exist passes the scope check, then answers not found.
+// need their own scopes (NGSIEM Saved Queries, Dashboards, ...). A made-up
+// job id passes the scope check, then is refused as invalid (400) or not
+// found (404); a client without the scope gets 403 first.
 var probePath = map[string]map[string]string{
 	"NGSIEM:read": {"repository": "search-all", "id": "falcon-mcp-probe"},
 }
@@ -131,8 +132,8 @@ func (c *Client) Probe(ctx context.Context, deadline time.Duration) *Probes {
 			q, _ := url.ParseQuery(pr.query)
 			_, err := c.Do(ctx, pr.op, Params{Query: q, Path: probePath[scope]})
 			r := classify(err)
-			if r.Status == http.StatusNotFound && probePath[scope] != nil {
-				r = ProbeResult{State: ProbeOK} // the made-up id, past the scope check
+			if (r.Status == http.StatusBadRequest || r.Status == http.StatusNotFound) && probePath[scope] != nil {
+				r = ProbeResult{State: ProbeOK} // the made-up id, refused past the scope check
 			}
 			switch {
 			case r.State == ProbeMissing:
