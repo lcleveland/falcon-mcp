@@ -125,7 +125,7 @@ func TestHTTPShutdownStopsNGSIEMJobs(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	served := make(chan error, 1)
-	go func() { served <- ServeHTTP(ctx, ln, cfg, s, discard); stop() }()
+	go func() { err := ServeHTTP(ctx, ln, cfg, s, discard); stop(); served <- err }()
 
 	cs, err := connect("http://"+ln.Addr().String(), "")
 	if err != nil {
@@ -142,15 +142,9 @@ func TestHTTPShutdownStopsNGSIEMJobs(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("server did not shut down")
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		mu.Lock()
-		n := len(stopped)
-		mu.Unlock()
-		if n > 0 {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+	if len(stopped) == 0 {
+		t.Error("NGSIEM job not stopped by the time shutdown returned")
 	}
-	t.Error("NGSIEM job not stopped at shutdown")
 }

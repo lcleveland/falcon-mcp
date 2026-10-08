@@ -196,11 +196,13 @@ func ngsiemSearch(ctx context.Context, d Deps, in Input) (map[string]any, error)
 		return nil, errors.New("the server is shutting down")
 	}
 	st, err := d.poll(ctx, j)
-	d.jobs.end(j)
 	if err != nil {
-		go d.jobs.stop(j)
+		// Stopped before end, so a shutdown cannot exit with it running.
+		d.jobs.stop(j)
+		d.jobs.end(j)
 		return nil, err
 	}
+	d.jobs.end(j)
 	meta := project(st.MetaData, []string{"eventCount", "processedEvents", "workDone", "totalWork", "isAggregate", "filterQuery.queryString"})
 	progress := map[string]any{"meta": meta}
 	if w := append(st.Warnings, list(st.MetaData["warnings"])...); len(w) > 0 {

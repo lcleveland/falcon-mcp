@@ -44,7 +44,8 @@ func Handler(cfg *config.Config, s *mcp.Server, log *slog.Logger) http.Handler {
 }
 
 // ServeHTTP serves on ln until ctx is cancelled, then drains for up to 5s.
-// Requests get ctx as their base, so calls in flight see the cancel.
+// Tool calls the SDK still runs after the drain are not cancelled; the
+// caller's stop (tools.Register) ends their NGSIEM jobs.
 func ServeHTTP(ctx context.Context, ln net.Listener, cfg *config.Config, s *mcp.Server, log *slog.Logger) error {
 	srv := &http.Server{
 		Handler:           Handler(cfg, s, log),
