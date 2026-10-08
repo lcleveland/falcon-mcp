@@ -2,6 +2,8 @@ package tools
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"net/url"
 	"time"
 
@@ -49,15 +51,22 @@ func registerStatus(s *mcp.Server, d Deps) {
 		out.TokenExpires = exp.UTC().Format(time.RFC3339)
 
 		// A 403 here only means this client lacks Hosts:read; the reply still
-		// carries the rate-limit headers.
-		if _, err := c.Do(ctx, statusOp, falcon.Params{Query: url.Values{"limit": {"1"}}}); err != nil {
-			out.Detail = err.Error()
-		} else {
+		// carries the rate-limit headers. Anything else is a tenant failure.
+		var res *mcp.CallToolResult
+		_, err = c.Do(ctx, statusOp, falcon.Params{Query: url.Values{"limit": {"1"}}})
+		var ae *falcon.APIError
+		switch {
+		case err == nil:
 			out.APIReachable = true
+		case errors.As(err, &ae) && ae.Status == http.StatusForbidden:
+			out.Detail = err.Error()
+		default:
+			out.Detail = err.Error()
+			res = &mcp.CallToolResult{IsError: true}
 		}
 		if limit, remaining := c.RateLimit(); limit >= 0 {
 			out.RateLimit = &RateLimit{Limit: limit, Remaining: remaining}
 		}
-		return nil, out, nil
+		return res, out, nil
 	})
 }

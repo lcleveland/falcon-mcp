@@ -40,6 +40,7 @@ const (
 	tokenPath    = "/oauth2/token"
 	refreshEarly = 2 * time.Minute // tokens live 30 minutes
 	lowHeadroom  = 10              // X-Ratelimit-Remaining at which to pace
+	maxBody      = 64 << 20        // largest response read
 )
 
 type Client struct {
@@ -107,21 +108,21 @@ func (c *Client) Autodiscover(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	region := strings.ToLower(strings.TrimSpace(h.Get("X-Cs-Region")))
-	host, ok := c.Hosts[region]
-	if !ok || !slices.Contains(discoverable, region) {
+	cloud := strings.ToLower(strings.TrimSpace(h.Get("X-Cs-Region")))
+	host, ok := c.Hosts[cloud]
+	if !ok || !slices.Contains(discoverable, cloud) {
 		c.revoke(ctx, c.base, tok)
-		return "", fmt.Errorf("cloud autodiscovery: unrecognised X-Cs-Region %.32q; set --cloud", region)
+		return "", fmt.Errorf("cloud autodiscovery: unrecognised X-Cs-Region %.32q; set --cloud", cloud)
 	}
 	if host == c.base {
-		c.cloud, c.token, c.expiry = region, tok, expiry
-		return region, nil
+		c.cloud, c.token, c.expiry = cloud, tok, expiry
+		return cloud, nil
 	}
 	// The discovery token is not used across clouds; revoke it in the
 	// tenant's home cloud, as gofalcon does, and mint a fresh one there.
 	c.revoke(ctx, host, tok)
-	c.cloud, c.base, c.token = region, host, ""
-	return region, nil
+	c.cloud, c.base, c.token = cloud, host, ""
+	return cloud, nil
 }
 
 // bearer returns a cached token, refreshing it early or when force is set
@@ -247,10 +248,13 @@ func (c *Client) Do(ctx context.Context, id string, p Params) (json.RawMessage, 
 		if err != nil {
 			return nil, fmt.Errorf("Falcon %s: %s", id, c.scrub(err.Error(), tok))
 		}
-		b, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+		b, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 		resp.Body.Close()
 		if err != nil {
 			return nil, fmt.Errorf("Falcon %s: reading response: %s", id, c.scrub(err.Error(), tok))
+		}
+		if len(b) > maxBody {
+			return nil, fmt.Errorf("Falcon %s: response larger than %d MiB; narrow the request", id, maxBody>>20)
 		}
 		c.noteRateLimit(resp.Header)
 		c.log.Debug("falcon request", "op", id, "status", resp.StatusCode, "trace_id", resp.Header.Get("X-Cs-Traceid"))

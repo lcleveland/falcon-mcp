@@ -64,7 +64,7 @@ func newAPIError(id string, op Op, resp *http.Response, body []byte, scrub func(
 	}
 	e.Detail = scrub(e.Detail)
 	if len(e.Detail) > maxErrBody {
-		e.Detail = e.Detail[:maxErrBody] + "…"
+		e.Detail = strings.ToValidUTF8(e.Detail[:maxErrBody], "") + "…"
 	}
 	e.Hint = hint(e, op.Write)
 	return e

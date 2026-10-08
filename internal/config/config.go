@@ -55,9 +55,9 @@ func (c *Config) LogValue() slog.Value {
 // Warnings (non-fatal) are returned for the caller to log once a logger exists.
 func Parse(args []string, getenv func(string) string) (*Config, []string, error) {
 	var (
-		c                                     Config
+		c                                    Config
 		rawURL, idFile, secretFile, logLevel string
-		warnings                              []string
+		warnings                             []string
 	)
 	clouds := slices.Sorted(maps.Keys(falcon.Clouds))
 

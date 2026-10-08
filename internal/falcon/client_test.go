@@ -21,8 +21,8 @@ type tenant struct {
 	tokens   atomic.Int32
 	revoked  atomic.Int32
 	expires  int
-	region   string
-	tokenErr int // status to fail the token endpoint with
+	cloud    string // sent as X-Cs-Region
+	tokenErr int    // status to fail the token endpoint with
 	api      http.HandlerFunc
 }
 
@@ -44,8 +44,8 @@ func (f *tenant) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if exp == 0 {
 			exp = 1799
 		}
-		if f.region != "" {
-			w.Header().Set("X-Cs-Region", f.region)
+		if f.cloud != "" {
+			w.Header().Set("X-Cs-Region", f.cloud)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
@@ -140,7 +140,7 @@ func TestAutodiscover(t *testing.T) {
 	home := &tenant{api: status(200, `{}`)}
 	homeURL := serve(t, home)
 
-	us1 := &tenant{region: "eu-1"}
+	us1 := &tenant{cloud: "eu-1"} // the us-1 endpoint, sending us to eu-1
 	c := newTest(t, us1)
 	c.Hosts = map[string]string{"us-1": c.BaseURL(), "eu-1": homeURL}
 	cloud, err := c.Autodiscover(context.Background())
@@ -155,7 +155,7 @@ func TestAutodiscover(t *testing.T) {
 	}
 
 	// Staying on us-1 keeps the token.
-	stay := &tenant{region: "US-1"}
+	stay := &tenant{cloud: "US-1"}
 	c = newTest(t, stay)
 	c.Hosts = map[string]string{"us-1": c.BaseURL()}
 	if cloud, err := c.Autodiscover(context.Background()); err != nil || cloud != "us-1" || stay.revoked.Load() != 0 {
@@ -163,13 +163,13 @@ func TestAutodiscover(t *testing.T) {
 	}
 
 	// Unknown, gov and missing regions are refused; no URL comes from the header.
-	for _, region := range []string{"https://evil.test", "us-gov-1", "", "eu-9"} {
-		f := &tenant{region: region}
+	for _, cloud := range []string{"https://evil.test", "us-gov-1", "", "eu-9"} {
+		f := &tenant{cloud: cloud}
 		c := newTest(t, f)
 		base := c.BaseURL()
 		c.Hosts = map[string]string{"us-1": base, "us-gov-1": "https://gov.test"}
 		if _, err := c.Autodiscover(context.Background()); err == nil || !strings.Contains(err.Error(), "X-Cs-Region") || c.BaseURL() != base {
-			t.Errorf("region %q: err = %v, base = %s", region, err, c.BaseURL())
+			t.Errorf("cloud %q: err = %v, base = %s", cloud, err, c.BaseURL())
 		}
 	}
 }

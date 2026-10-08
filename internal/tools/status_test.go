@@ -89,6 +89,12 @@ func TestStatus(t *testing.T) {
 		t.Errorf("forbidden status = %v", out)
 	}
 
+	// Any other failure of the read is a tool error.
+	cs = session(t, http.StatusCreated, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusBadGateway) })
+	if out, isErr = call(t, cs, "falcon_status"); !isErr || out["api_reachable"] != false {
+		t.Errorf("5xx status = %v, isErr = %t", out, isErr)
+	}
+
 	// Rejected credentials are a tool error, not a protocol error.
 	cs = session(t, http.StatusForbidden, nil)
 	out, isErr = call(t, cs, "falcon_status")
