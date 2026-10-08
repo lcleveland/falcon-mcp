@@ -14,15 +14,36 @@
       pkgsFor = system: nixpkgs.legacyPackages.${system};
     in
     {
+      overlays.default = import ./overlay.nix;
+
+      nixosModules = {
+        falcon-mcp =
+          { pkgs, ... }:
+          {
+            imports = [ ./modules/falcon-mcp.nix ];
+            services.falcon-mcp.package =
+              lib.mkDefault
+                self.packages.${pkgs.stdenv.hostPlatform.system}.falcon-mcp;
+          };
+        default = self.nixosModules.falcon-mcp;
+      };
+
       packages = forAllSystems (system: rec {
         falcon-mcp = (pkgsFor system).callPackage ./pkgs/falcon-mcp.nix { };
         default = falcon-mcp;
       });
 
-      checks = forAllSystems (system: {
-        # Runs the Go test suite in checkPhase.
-        package = self.packages.${system}.falcon-mcp;
-      });
+      checks = forAllSystems (
+        system:
+        {
+          # Runs the Go test suite in checkPhase.
+          package = self.packages.${system}.falcon-mcp;
+        }
+        // import ./tests/eval.nix {
+          inherit self lib;
+          pkgs = pkgsFor system;
+        }
+      );
 
       formatter = forAllSystems (system: (pkgsFor system).nixfmt-tree);
 
