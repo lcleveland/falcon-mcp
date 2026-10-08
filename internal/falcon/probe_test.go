@@ -43,7 +43,7 @@ func TestProbe(t *testing.T) {
 		"/iocs/queries/indicators/v1":                                      status(429, `{}`),
 		"/cases/queries/cases/v1":                                          status(503, `{}`),
 		"/intel/combined/actors/v1":                                        status(404, `{}`),
-		"/humio/api/v1/repositories/search-all/queryjobs/falcon-mcp-probe": status(404, `{}`),
+		"/humio/api/v1/repositories/search-all/queryjobs/falcon-mcp-probe": status(400, `{"errors":[{"message":"falcon-mcp-probe is not a valid query id."}]}`),
 		"/policy/queries/prevention/v1": func(w http.ResponseWriter, r *http.Request) {
 			<-r.Context().Done() // hangs past the deadline
 		},
