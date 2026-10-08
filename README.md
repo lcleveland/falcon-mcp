@@ -148,43 +148,110 @@ There is no flag that takes the secret directly.
 
 To rotate the secret, reset it on the API client in the console, overwrite the file, and restart the server.
 
-Scopes, in the console's order. **Read** names the tool group that needs read; **Write** names the capabilities that need write, and each also needs that scope's read.
+Every scope, in the console's order; leave the "not used" ones unticked. **Read** names the tool group that needs read; **Write** names the capabilities that need write, and each also needs that scope's read.
 
 | Scope | Read | Write |
 |---|---|---|
+| Access Scopes | not used | |
 | Alerts | respond | triage |
+| API Client Management | $\color{red}\textbf{Do not enable}$ | $\color{red}\textbf{Do not enable}$ |
+| API integrations | not used | |
+| Application Abuse Exclusions | not used | |
+| App Logs | not used | |
+| Apps | not used | |
+| Audit Logs | not used | |
+| Case Analyst Dashboards | not used | |
+| Case SOC Dashboards | not used | |
 | Case Templates | respond | |
 | Cases | respond | triage |
 | Charlotte AI Agent Definition | ai | workflows (agent invoke, through `falcon_api`) |
+| Charlotte AI Agent Evaluation Runs | not used | |
+| Charlotte AI Agent Evaluations | not used | |
+| Cloud Security AWS Registration | not used | |
+| Cloud Security Azure Registration | not used | |
+| Cloud Security Google Cloud Registration | not used | |
+| Cloud ML Policies | not used | |
+| Cloud Security OCI Registration | not used | |
+| Cloud Security Registration | not used | |
 | Content Update Policy | prevent | fleet-config |
+| Correlation Rules Admin | not used | |
 | Correlation Rules | siem | detection-add, detection-remove (through `falcon_api`) |
 | Custom IOA rules | prevent | detection-add, detection-remove |
+| Custom storage | not used | |
+| Delete Managed Assets | not used | |
+| Channel File Control Settings | not used | |
+| Deployment Coordinator | not used | |
+| Detections | not used | |
+| Device Content | not used | |
 | Device control policies | prevent | fleet-config |
 | Hosts | hosts | host-tags, containment, detection-remove, destructive |
 | Assets | hosts | |
+| Falcon Complete Dashboard | not used | |
 | Actors (Falcon Intelligence) | intel | |
 | Indicators (Falcon Intelligence) | intel | |
+| Malware Families (Falcon Intelligence) | not used | |
 | Reports (Falcon Intelligence) | intel | |
+| Sandbox (Falcon Intelligence) | not used | |
+| Foundry Extensions | not used | |
+| Foundry Navigations | not used | |
+| Foundry Pages | not used | |
 | Host groups | hosts | fleet-config |
+| Host Migration | not used | |
 | NGSIEM | siem | siem: **needed to search**, since a search is started and stopped with write calls |
+| Identity Protection Assessment | not used | |
+| Identity Protection Detections | not used | |
+| Identity Protection Enforcement | not used | |
 | Identity Protection Entities | identity | |
 | Identity Protection GraphQL | | identity: **needed to query**; the GraphQL route is a write scope, but the server sends queries only and refuses mutations |
+| Identity Protection Health | not used | |
+| Identity Protection on-premise enablement | not used | |
+| Identity Protection Policy Rules | not used | |
+| Identity Protection Timeline | not used | |
+| Incidents | not used | |
+| Falcon Indicator Graph | not used | |
+| Installation Tokens Settings | not used | |
+| Installation Tokens | not used | |
 | IOC Management | prevent | detection-add, detection-remove |
+| Bulk uninstallation token | not used | |
+| MalQuery | not used | |
+| Message Center | not used | |
 | Machine Learning Exclusions | prevent | detection-remove |
+| Network Containment Allowlist | not used | |
+| NGSIEM Dashboards | not used | |
+| NGSIEM Data Connections API | not used | |
+| NGSIEM Lookup Files | not used | |
+| NGSIEM Parsers | not used | |
+| NGSIEM Persisted Aggregations | not used | |
+| NGSIEM Saved Queries | not used | |
+| NGSIEM Scheduled Reports | not used | |
+| On-demand scans (ODS) | not used | |
 | Prevention policies | prevent | fleet-config |
 | Quarantined Files | respond | detection-remove, destructive |
+| Quick Scan (Falcon Intelligence) | not used | |
+| Real time response (admin) | not used | |
+| Real time response app | not used | |
 | Real time response audit | respond | |
 | Real time response | respond | rtr-read, rtr-respond |
 | Response policies | prevent | fleet-config |
+| Sample uploads | not used | |
 | Scheduled Reports | siem (also report launch) | |
 | IOA Exclusions | prevent | detection-remove |
+| Sensor Download | not used | |
 | Sensor update policies | prevent | fleet-config |
 | Sensor Usage | hosts | |
 | Sensor Visibility Exclusions | prevent | detection-remove |
+| Event streams | not used | |
+| Third Party Detection Exclusions | not used | |
+| Third-Party IOC Exports API | not used | |
+| Third-Party IOC Feeds API | not used | |
+| Third-Party IOCs API | not used | |
+| Threatgraph | not used | |
+| User management | not used | |
 | Workflow | siem | workflows |
+| XDR 3rd Party Response | not used | |
 | Zero Trust Assessment | hosts | |
 
-Other scopes the server uses:
+Scopes the server uses that are not in that list; find them by name:
 
 | Scope | Read | Write |
 |---|---|---|
