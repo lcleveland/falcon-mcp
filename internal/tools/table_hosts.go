@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/url"
@@ -18,7 +19,7 @@ var hostsTools = []Tool{
 	{Name: "falcon_host", Group: "hosts", Title: "Hosts",
 		Description: "Hosts running the Falcon sensor: identity, OS, network, sensor version, policies and containment status.",
 		Actions: []Action{
-			{Name: "search", Help: "hosts matching filter; sort e.g. last_seen.desc.", Kind: Search,
+			{Name: "search", Help: "hosts matching filter; sort e.g. last_seen.desc. Windows hostnames are cut to 15 characters, so for a longer name match its first 15 or a prefix (hostname:'PREFIX*').", Kind: Search,
 				Op: "QueryDevicesByFilter", Hydrate: "PostDeviceDetailsV2", IDs: "body:ids", Brief: hostBrief,
 				Guide: "falcon://hosts/search/fql-guide"},
 			{Name: "get", Help: "full hosts by device id (ids).", Kind: Get, Op: "PostDeviceDetailsV2", IDs: "body:ids"},
@@ -80,7 +81,8 @@ var hostsTools = []Tool{
 			{Name: "search", Help: "device ids (aid) and scores, e.g. filter score:<=50; sort score|asc for weakest first. Then get by aid for the signals.", Kind: Search,
 				Op: "getAssessmentsByScoreV1", Paging: After, Filter: "score:>=0", Brief: []string{"aid", "score"}},
 			{Name: "get", Help: "full assessments by device id (ids).", Kind: Get, Op: "getAssessmentV1"},
-			{Name: "get_audit", Help: "the tenant-wide score summary.", Kind: Aggregate, NoFilter: true, Op: "getAuditV1"},
+			{Name: "get_audit", Help: "the tenant-wide score summary: per platform, its score, host count and gaps (signals met by fewer than all hosts, with the share that meet them); params detail (true for every signal).",
+				Kind: Custom, Op: "getAuditV1", Run: ztaAudit, Params: []string{"detail"}},
 		}},
 	{Name: "falcon_sensor_usage", Group: "hosts", Title: "Sensor usage",
 		Description: "Weekly average sensor counts, as billed.",
@@ -88,6 +90,45 @@ var hostsTools = []Tool{
 			{Name: "search_weekly", Help: "weekly averages; filter e.g. event_date:'2026-09-01' or period:'28'.", Kind: Aggregate,
 				Op: "GetSensorUsageWeekly", Guide: "falcon://sensor-usage/weekly/fql-guide"},
 		}},
+}
+
+// ztaAudit returns the tenant-wide ZTA summary. Each platform's audit
+// holds ~70 signal ratios, mostly 1, so by default only those below 1 are
+// kept, as gaps.
+func ztaAudit(ctx context.Context, d Deps, in Input) (map[string]any, error) {
+	detail := false
+	for k, v := range in.Params {
+		if k != "detail" {
+			return nil, fmt.Errorf("params: %q is not a parameter of this action (takes detail)", k)
+		}
+		detail = v == true || v == "true"
+	}
+	env, err := d.call(ctx, "getAuditV1", falcon.Params{Query: url.Values{}})
+	if err != nil {
+		return nil, err
+	}
+	items := list(env.Resources)
+	if !detail {
+		for _, r := range items {
+			r, _ := r.(map[string]any)
+			for _, p := range list(r["platforms"]) {
+				p, _ := p.(map[string]any)
+				audit, ok := p["audit"].(map[string]any)
+				if !ok {
+					continue
+				}
+				gaps := map[string]any{}
+				for k, v := range audit {
+					if f, ok := v.(float64); ok && f < 1 {
+						gaps[k] = f
+					}
+				}
+				delete(p, "audit")
+				p["gaps"] = gaps
+			}
+		}
+	}
+	return shape(items, in.Fields, "", noteGet, env), nil
 }
 
 // maxTags is UpdateDeviceTags' limit; it fails the whole call above it.

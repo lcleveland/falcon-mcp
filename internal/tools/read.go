@@ -301,7 +301,7 @@ func (d Deps) search(ctx context.Context, tool string, a Action, in Input) (map[
 		fields = a.Brief
 	}
 	out := shape(items, fields, encodeCursor(key, next), noteSearch, env)
-	if pg.Total != nil {
+	if pg.Total != nil && !a.TotalIsEnd {
 		out["total"] = *pg.Total
 	}
 	return out, nil

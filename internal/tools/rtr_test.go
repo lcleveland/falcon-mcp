@@ -43,7 +43,7 @@ func TestRTRAllowlists(t *testing.T) {
 		return isErr, text
 	}
 
-	refused := append([]string{"rm C:\\x", "reg set HKLM\\x", "get C:\\x", "kill 4", "eventlog backup Security C:\\x", "", "  ", "ls\nrm C:\\x", "ps\rkill 4"}, adminCommands...)
+	refused := append([]string{"history", "rm C:\\x", "reg set HKLM\\x", "get C:\\x", "kill 4", "eventlog backup Security C:\\x", "", "  ", "ls\nrm C:\\x", "ps\rkill 4"}, adminCommands...)
 	for _, c := range refused {
 		for name, fn := range map[string]func(string) (bool, string){"run_command": run, "run_batch_command": batch} {
 			if isErr, text := fn(c); !isErr {
@@ -207,5 +207,26 @@ func TestRTRHiddenWithoutCapability(t *testing.T) {
 				t.Errorf("%v: %s shown", c.allow, a)
 			}
 		}
+	}
+}
+
+// init_session and pulse_session drop Falcon's scripts list.
+func TestRTRSessionBrief(t *testing.T) {
+	f := rtrFake()
+	f.replies["POST "+rtrSessions] = reply{201, `{"resources":[{"session_id":"s-9","pwd":"C:\\","scripts":[{"command":"ls"}]}]}`}
+	call, _ := writeSession(t, []string{"rtr-read"}, 0, f)
+	out, isErr, text := call("falcon_rtr", map[string]any{"action": "init_session", "id": "aid-1", "reason": "triage"})
+	if isErr {
+		t.Fatal(text)
+	}
+	s := out["results"].([]any)[0].(map[string]any)
+	if s["session_id"] != "s-9" || s["pwd"] != `C:\` || s["scripts"] != nil {
+		t.Errorf("session = %v", s)
+	}
+	if isErr, text := func() (bool, string) {
+		_, isErr, text := call("falcon_rtr", map[string]any{"action": "run_command", "id": "s-9", "command": "mount", "reason": "triage"})
+		return isErr, text
+	}(); isErr {
+		t.Errorf("mount refused: %s", text)
 	}
 }

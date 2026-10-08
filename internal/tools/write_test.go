@@ -661,3 +661,15 @@ func TestDetectionFleetWorkflowWrites(t *testing.T) {
 		}
 	}
 }
+
+func TestEmptyWriteReplyNamesTargets(t *testing.T) {
+	f := &fakeWrites{}
+	call, _ := writeSession(t, []string{"detection-remove"}, 0, f)
+	out, isErr, text := call("falcon_custom_ioa", map[string]any{"action": "delete_rule_groups", "ids": []string{"g1"}, "reason": "r"})
+	if isErr {
+		t.Fatal(text)
+	}
+	if got, _ := out["applied_to"].([]any); len(got) != 1 || got[0] != "g1" {
+		t.Errorf("out = %v", out)
+	}
+}

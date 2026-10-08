@@ -15,7 +15,7 @@ var intelTools = []Tool{
 		Description: "Falcon Intelligence: adversary (actor) profiles, indicators of compromise and finished intelligence reports.",
 		Actions: []Action{
 			{Name: "search_actors", Help: "actors matching filter, e.g. name:'FANCY BEAR' or target_industries.value:'Energy'; sort e.g. last_activity_date|desc; params q (free text).", Kind: Search,
-				Op: "QueryIntelActorEntities", Params: []string{"q"}, Brief: actorBrief, Guide: "falcon://intel/actors/fql-guide"},
+				Op: "QueryIntelActorEntities", TotalIsEnd: true, Params: []string{"q"}, Brief: actorBrief, Guide: "falcon://intel/actors/fql-guide"},
 			{Name: "search_indicators", Help: "indicators (hashes, domains, IPs, URLs) matching filter, e.g. indicator:'evil.example.com'; sort e.g. published_date|desc; params q (free text), include_deleted, include_relations (default true, large).", Kind: Search,
 				Op: "QueryIntelIndicatorEntities", Params: []string{"q", "include_deleted", "include_relations"}, Brief: indicatorBrief, Guide: "falcon://intel/indicators/fql-guide"},
 			{Name: "search_reports", Help: "intelligence reports matching filter, e.g. actors.name:'FANCY BEAR'; sort e.g. created_date|desc; params q (free text).", Kind: Search,

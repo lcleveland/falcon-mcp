@@ -87,9 +87,21 @@ func (d Deps) write(ctx context.Context, tool string, a Action, in Input) (map[s
 	if res == nil {
 		res = env.Combined.Resources
 	}
-	out := shape(list(res), nil, "", noteGet, env)
-	if m, ok := res.(map[string]any); ok { // RTR batches answer by host id
+	out := shape(list(res), a.Brief, "", noteGet, env)
+	m, isMap := res.(map[string]any)
+	if isMap { // RTR batches answer by host id
 		maps.Copy(out, capObject(times(m)))
+	}
+	// Some writes (custom IOA deletes, RTR session deletes) succeed with no
+	// resources: name what the write was sent for, so success reads as such.
+	if r, _ := out["results"].([]any); len(r) == 0 && !isMap && env.BatchID == "" {
+		ids := w.Targets
+		if len(ids) == 0 && in.ID != "" {
+			ids = []string{in.ID}
+		}
+		if len(ids) > 0 {
+			out["applied_to"] = ids
+		}
 	}
 	if env.BatchID != "" {
 		out["batch_id"] = env.BatchID
