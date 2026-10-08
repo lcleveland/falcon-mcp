@@ -56,7 +56,8 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	s, n := server.New(cfg, c, probes, log)
+	s, n, stopTools := server.New(cfg, c, probes, log)
+	defer stopTools()
 	log.Info("registered tools", "count", n)
 	return server.ServeStdio(ctx, s)
 }

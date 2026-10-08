@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"crypto/sha256"
@@ -15,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/lcleveland/falcon-mcp/internal/falcon"
 )
@@ -37,6 +39,79 @@ type Input struct {
 	IDs    []string `json:"ids,omitempty" jsonschema:"ids to fetch"`
 	ID     string   `json:"id,omitempty" jsonschema:"the one id the action is scoped to"`
 	Body   any      `json:"body,omitempty" jsonschema:"aggregation request body"`
+
+	PolicyType    string         `json:"policy_type,omitempty" jsonschema:"which kind of policy; the tool description lists the types per action"`
+	ExclusionType string         `json:"exclusion_type,omitempty" jsonschema:"which kind of exclusion; the tool description lists the types per action"`
+	Params        map[string]any `json:"params,omitempty" jsonschema:"query parameters by name; the action's help lists the ones it takes"`
+
+	Query      string         `json:"query,omitempty" jsonschema:"the query text: CQL for falcon_ngsiem, a GraphQL query document for falcon_identity"`
+	Variables  map[string]any `json:"variables,omitempty" jsonschema:"GraphQL variables"`
+	Repository string         `json:"repository,omitempty" jsonschema:"NGSIEM repository or view, e.g. search-all (the default) or investigate_view"`
+	Start      string         `json:"start,omitempty" jsonschema:"search window start: RFC 3339 or relative (1h, 7d); default 1d"`
+	End        string         `json:"end,omitempty" jsonschema:"search window end: RFC 3339 or relative; default now"`
+}
+
+// inputs are the Input fields an action reads, by JSON name, beyond action
+// and fields.
+func (a Action) inputs(typeParam string) []string {
+	var in []string
+	switch a.Kind {
+	case Search:
+		in = []string{"limit", "cursor"}
+		if !a.NoFilter {
+			in = append(in, "filter", "sort")
+		}
+		if a.Param != "" {
+			in = append(in, "id")
+		}
+	case Get:
+		in = []string{"ids"}
+	case Aggregate:
+		if !a.NoFilter {
+			in = append(in, "filter")
+		}
+		if op, _ := falcon.Lookup(a.Op); op.Method != http.MethodGet {
+			in = append(in, "body")
+		}
+		if a.TakesIDs {
+			in = append(in, "ids")
+		}
+	case Custom:
+		in = a.Inputs
+	}
+	if len(a.Query) > 0 {
+		in = append(in, "params")
+	}
+	if a.Type != "" {
+		in = append(in, typeParam)
+	}
+	return in
+}
+
+// params turns the params input into query parameters, refusing names the
+// action does not take.
+func params(a Action, in Input, q url.Values) error {
+	for k, v := range in.Params {
+		if !slices.Contains(a.Query, k) {
+			if len(a.Query) == 0 {
+				return fmt.Errorf("this action takes no params")
+			}
+			return fmt.Errorf("params: %q is not a parameter of this action (takes %s)", k, strings.Join(a.Query, ", "))
+		}
+		vs, ok := v.([]any)
+		if !ok {
+			vs = []any{v}
+		}
+		for _, x := range vs {
+			switch x.(type) {
+			case string, float64, bool:
+				q.Add(k, fmt.Sprint(x))
+			default:
+				return fmt.Errorf("params: %s must be a string, number, boolean or a list of them", k)
+			}
+		}
+	}
+	return nil
 }
 
 // envelope is Falcon's reply shape.
@@ -60,9 +135,16 @@ func (d Deps) call(ctx context.Context, op string, p falcon.Params) (*envelope, 
 		return nil, err
 	}
 	var env envelope
-	if len(raw) > 0 {
-		if err := json.Unmarshal(raw, &env); err != nil {
-			return nil, fmt.Errorf("decoding Falcon %s response: %w", op, err)
+	if len(raw) > 0 && json.Unmarshal(raw, &env) != nil {
+		// Some routes serve a file: a bare JSON array, or text such as CSV.
+		var v any
+		switch {
+		case json.Unmarshal(raw, &v) == nil:
+			env.Resources = v
+		case utf8.Valid(raw) && !bytes.HasPrefix(raw, []byte("%PDF")):
+			env.Resources = string(raw)
+		default:
+			return nil, fmt.Errorf("Falcon %s returned a binary file, which this server does not return", op)
 		}
 	}
 	return &env, nil
@@ -70,12 +152,17 @@ func (d Deps) call(ctx context.Context, op string, p falcon.Params) (*envelope, 
 
 // read runs one read action.
 func (d Deps) read(ctx context.Context, tool string, a Action, in Input) (map[string]any, error) {
-	if a.Kind != Search && in.Cursor != "" {
+	if a.Kind != Search && a.Kind != Custom && in.Cursor != "" {
 		return nil, errors.New("cursor does not belong to this query: only search actions page")
+	}
+	if a.NoFilter && (in.Filter != "" || in.Sort != "") {
+		return nil, errors.New("this action takes no filter or sort; its help lists the params it takes")
 	}
 	switch a.Kind {
 	case Search:
 		return d.search(ctx, tool, a, in)
+	case Custom:
+		return a.Run(ctx, d, in)
 	case Get:
 		if len(in.IDs) == 0 {
 			return nil, errors.New("this action needs ids")
@@ -83,9 +170,19 @@ func (d Deps) read(ctx context.Context, tool string, a Action, in Input) (map[st
 		if len(in.IDs) > maxItems {
 			return nil, fmt.Errorf("at most %d ids per call", maxItems)
 		}
-		env, err := d.call(ctx, a.Op, idParams(a.IDs, in.IDs))
+		if strings.HasPrefix(a.IDs, "one:") && len(in.IDs) != 1 {
+			return nil, errors.New("this action takes exactly one id in ids")
+		}
+		p := idParams(a.IDs, in.IDs)
+		if err := params(a, in, p.Query); err != nil {
+			return nil, err
+		}
+		env, err := d.call(ctx, a.Op, p)
 		if err != nil {
 			return nil, err
+		}
+		if t, ok := env.Resources.(string); ok {
+			return text(t), nil
 		}
 		return shape(list(env.Resources), in.Fields, "", noteGet, env), nil
 	}
@@ -102,7 +199,7 @@ func (d Deps) search(ctx context.Context, tool string, a Action, in Input) (map[
 		limit = min(limit, a.MaxLimit)
 	}
 	filter := joinFilter(a.Filter, in.Filter)
-	key := queryKey(tool, a.Name, filter, in.Sort, in.ID, in.Fields)
+	key := queryKey(tool, a.Name, a.Type, filter, in.Sort, in.ID, in.Fields, in.Params)
 	pos, err := decodeCursor(key, in.Cursor)
 	if err != nil {
 		return nil, err
@@ -123,6 +220,12 @@ func (d Deps) search(ctx context.Context, tool string, a Action, in Input) (map[
 	}
 	if pos != "" {
 		q.Set(map[Paging]string{Offset: "offset", After: "after"}[a.Paging], pos)
+	}
+	for k, v := range a.Set {
+		q[k] = slices.Clone(v)
+	}
+	if err := params(a, in, q); err != nil {
+		return nil, err
 	}
 
 	env, err := d.call(ctx, a.Op, falcon.Params{Query: q})
@@ -152,7 +255,9 @@ func (d Deps) search(ctx context.Context, tool string, a Action, in Input) (map[
 	case Offset:
 		start, _ := strconv.Atoi(pos)
 		end := start + got
-		if (pg.Total != nil && end < *pg.Total) || (pg.Total == nil && got == limit) {
+		// A full page whose total equals its end may still have more:
+		// some APIs (AIDR) report offset+len as total.
+		if (pg.Total != nil && (end < *pg.Total || end == *pg.Total && got == limit)) || (pg.Total == nil && got == limit) {
 			next = strconv.Itoa(end)
 		}
 	case After:
@@ -184,9 +289,15 @@ func (d Deps) aggregate(ctx context.Context, a Action, in Input) (map[string]any
 	for _, id := range in.IDs {
 		q.Add("ids", id)
 	}
+	if err := params(a, in, q); err != nil {
+		return nil, err
+	}
 	env, err := d.call(ctx, a.Op, falcon.Params{Query: q, Body: in.Body})
 	if err != nil {
 		return nil, err
+	}
+	if t, ok := env.Resources.(string); ok {
+		return text(t), nil
 	}
 	if l, ok := env.Resources.([]any); ok {
 		return shape(l, in.Fields, "", noteGet, env), nil
@@ -200,9 +311,20 @@ func (d Deps) aggregate(ctx context.Context, a Action, in Input) (map[string]any
 // idParams sends ids where an entities op takes them.
 func idParams(where string, ids []string) falcon.Params {
 	if key, ok := strings.CutPrefix(where, "body:"); ok {
-		return falcon.Params{Body: map[string]any{key: ids}}
+		return falcon.Params{Body: map[string]any{key: ids}, Query: url.Values{}}
 	}
-	return falcon.Params{Query: url.Values{"ids": ids}}
+	name, _ := strings.CutPrefix(where, "query:")
+	name, _ = strings.CutPrefix(name, "one:")
+	return falcon.Params{Query: url.Values{cmp.Or(name, "ids"): ids}}
+}
+
+// text caps a file served as text, such as a CSV report.
+func text(t string) map[string]any {
+	if len(t) <= maxBytes {
+		return map[string]any{"results": t}
+	}
+	return map[string]any{"results": strings.ToValidUTF8(t[:maxBytes], ""),
+		"_truncation": map[string]any{"returned_bytes": maxBytes, "of": len(t), "note": "file too large; narrow the request"}}
 }
 
 const (
@@ -219,7 +341,7 @@ func inOrder(ids []string, ents []any) []any {
 	}
 	rank := func(x any) int {
 		m, _ := x.(map[string]any)
-		for _, k := range []string{"id", "device_id", "composite_id", "aid"} {
+		for _, k := range []string{"id", "device_id", "composite_id", "aid", "uuid"} {
 			if s, ok := m[k].(string); ok {
 				if i, ok := pos[s]; ok {
 					return i

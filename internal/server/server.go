@@ -13,11 +13,13 @@ import (
 	"github.com/lcleveland/falcon-mcp/internal/version"
 )
 
-// New builds the server with the enabled tools and reports how many.
-func New(cfg *config.Config, c *falcon.Client, probes *falcon.Probes, log *slog.Logger) (*mcp.Server, int) {
-	s := mcp.NewServer(&mcp.Implementation{Name: "falcon-mcp", Title: "CrowdStrike Falcon", Version: version.Version},
+// New builds the server with the enabled tools and reports how many. Call
+// stop at shutdown.
+func New(cfg *config.Config, c *falcon.Client, probes *falcon.Probes, log *slog.Logger) (s *mcp.Server, n int, stop func()) {
+	s = mcp.NewServer(&mcp.Implementation{Name: "falcon-mcp", Title: "CrowdStrike Falcon", Version: version.Version},
 		&mcp.ServerOptions{Logger: log, Instructions: instructions(c)})
-	return s, tools.Register(s, tools.Deps{Client: c, Config: cfg, Probes: probes, Log: log})
+	n, stop = tools.Register(s, tools.Deps{Client: c, Config: cfg, Probes: probes, Log: log})
+	return s, n, stop
 }
 
 func instructions(c *falcon.Client) string {

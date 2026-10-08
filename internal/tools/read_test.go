@@ -163,7 +163,7 @@ func TestLimitsAndByteCap(t *testing.T) {
 		t.Errorf("results are %d bytes", len(b))
 	}
 	// The cursor still points past the whole page.
-	pos, err := decodeCursor(queryKey("falcon_host_group", "search", "", "", "", []string(nil)), out["next_cursor"].(string))
+	pos, err := decodeCursor(queryKey("falcon_host_group", "search", "", "", "", "", []string(nil), map[string]any(nil)), out["next_cursor"].(string))
 	if err != nil || pos != "200" {
 		t.Errorf("cursor = %q, %v", pos, err)
 	}
