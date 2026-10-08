@@ -10,6 +10,15 @@ import (
 	"time"
 )
 
+// probePath fills the path of a probe route that has parameters. Plain
+// NGSIEM has no parameterless read: its GETs all sit under
+// /humio/api/v1/repositories/{repository}, and the /ngsiem-content routes
+// need their own scopes (NGSIEM Saved Queries, Dashboards, ...). A job that
+// does not exist passes the scope check, then answers not found.
+var probePath = map[string]map[string]string{
+	"NGSIEM:read": {"repository": "search-all", "id": "falcon-mcp-probe"},
+}
+
 // ProbeDeadline bounds the whole startup probe.
 const ProbeDeadline = 10 * time.Second
 
@@ -43,7 +52,7 @@ var probes = map[string]struct{ op, query string }{
 	"Indicators (Falcon Intelligence):read":             {"QueryIntelIndicatorEntities", "limit=1"},
 	"Machine Learning Exclusions:read":                  {"exclusions_search_v2", "limit=1"},
 	"Monitoring rules (Falcon Intelligence Recon):read": {"QueryRulesV1", "limit=1"},
-	"NGSIEM:read":                                       {"ListSavedQueries", "limit=1&search_domain=all"},
+	"NGSIEM:read":                                       {"GetSearchStatusV1", ""},
 	"Prevention Policies:read":                          {"queryPreventionPolicies", "limit=1"},
 	"Quarantined Files:read":                            {"QueryQuarantineFiles", "limit=1"},
 	"Real time response:read":                           {"RTR_ListAllSessions", "limit=1"},
@@ -120,8 +129,11 @@ func (c *Client) Probe(ctx context.Context, deadline time.Duration) *Probes {
 	for scope, pr := range probes {
 		wg.Go(func() {
 			q, _ := url.ParseQuery(pr.query)
-			_, err := c.Do(ctx, pr.op, Params{Query: q})
+			_, err := c.Do(ctx, pr.op, Params{Query: q, Path: probePath[scope]})
 			r := classify(err)
+			if r.Status == http.StatusNotFound && probePath[scope] != nil {
+				r = ProbeResult{State: ProbeOK} // the made-up id, past the scope check
+			}
 			switch {
 			case r.State == ProbeMissing:
 				c.log.Info("probe: scope missing or not licensed; hiding its actions", "scope", scope, "detail", r.Detail)

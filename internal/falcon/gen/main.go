@@ -50,7 +50,6 @@ var extra = map[string]string{
 	// Probe routes for read scopes upstream reaches only through POSTs,
 	// required filters or write scopes.
 	"query_hosts":          "Assets:read",
-	"ListSavedQueries":     "NGSIEM:read",
 	"QuerySensorsByFilter": "Identity Protection Entities:read",
 	// Upstream's key for this predates FalconPy's rename; upstream also lists
 	// four read scopes, but GraphQL:write is the one the call needs.

@@ -17,8 +17,8 @@ func TestEveryScopeHasAProbeRoute(t *testing.T) {
 	}
 	for scope, pr := range probes {
 		op, ok := ops[pr.op]
-		if !ok || op.Method != http.MethodGet || op.Scope != scope || op.Write || strings.Contains(op.Path, "{") {
-			t.Errorf("%s: probe route %s is not a parameterless GET read under that scope: %+v", scope, pr.op, op)
+		if !ok || op.Method != http.MethodGet || op.Scope != scope || op.Write || strings.Contains(op.Path, "{") != (probePath[scope] != nil) {
+			t.Errorf("%s: probe route %s is not a GET read under that scope, parameterless unless probePath fills it: %+v", scope, pr.op, op)
 		}
 	}
 }
@@ -38,11 +38,12 @@ func TestFamilyRead(t *testing.T) {
 
 func TestProbe(t *testing.T) {
 	routes := map[string]http.HandlerFunc{
-		"/devices/queries/devices/v1": status(200, `{"resources":[]}`),
-		"/alerts/queries/alerts/v2":   status(403, `{"errors":[{"message":"access denied, scope not permitted"}]}`),
-		"/iocs/queries/indicators/v1": status(429, `{}`),
-		"/cases/queries/cases/v1":     status(503, `{}`),
-		"/intel/combined/actors/v1":   status(404, `{}`),
+		"/devices/queries/devices/v1":                                      status(200, `{"resources":[]}`),
+		"/alerts/queries/alerts/v2":                                        status(403, `{"errors":[{"message":"access denied, scope not permitted"}]}`),
+		"/iocs/queries/indicators/v1":                                      status(429, `{}`),
+		"/cases/queries/cases/v1":                                          status(503, `{}`),
+		"/intel/combined/actors/v1":                                        status(404, `{}`),
+		"/humio/api/v1/repositories/search-all/queryjobs/falcon-mcp-probe": status(404, `{}`),
 		"/policy/queries/prevention/v1": func(w http.ResponseWriter, r *http.Request) {
 			<-r.Context().Done() // hangs past the deadline
 		},
@@ -73,6 +74,7 @@ func TestProbe(t *testing.T) {
 		"IOC Management:read":               ProbeUnknown,
 		"Cases:read":                        ProbeUnknown,
 		"Actors (Falcon Intelligence):read": ProbeUnknown,
+		"NGSIEM:read":                       ProbeOK,
 		"Prevention Policies:read":          ProbeUnknown,
 	}
 	for scope, state := range want {
