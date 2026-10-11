@@ -22,7 +22,7 @@ buildGoModule (finalAttrs: {
     ];
   };
 
-  vendorHash = "sha256-NbuvbsmNbz3aKdjyyfpkbi52yRhXl473j3LvAUDn3L8=";
+  vendorHash = "sha256-9vuL07fht9qFdyEpcaIymioQH5raKxkk4oXZzB8dE7U=";
 
   subPackages = [ "cmd/falcon-mcp" ];
   env.CGO_ENABLED = 0;
