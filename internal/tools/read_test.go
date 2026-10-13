@@ -101,6 +101,9 @@ func TestSearchAfterPagingAndFixedFilter(t *testing.T) {
 	f := &fixtures{routes: map[string]string{"/discover/combined/hosts/v1": "assets_combined.json"}}
 	call := fixtureSession(t, nil, nil, f)
 	out, _, text := call("falcon_discover", map[string]any{"action": "search_managed_assets", "filter": "platform_name:'Linux'"})
+	if q := query(t, f.requests()[0].Query); q.Get("facet") != "system_insights" {
+		t.Errorf("facet = %q", q.Get("facet"))
+	}
 	if q := query(t, f.requests()[0].Query); q.Get("filter") != "entity_type:'managed'+platform_name:'Linux'" {
 		t.Errorf("filter = %q", q.Get("filter"))
 	}

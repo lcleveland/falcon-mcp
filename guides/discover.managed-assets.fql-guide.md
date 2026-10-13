@@ -33,6 +33,10 @@ This tool automatically filters for managed assets only by adding entity_type:'m
 You do not need to (and cannot) specify entity_type in your filter - it is always set to 'managed'.
 
 === WHAT THIS TOOL ADDS OVER falcon_search_hosts ===
+This is the console's Exposure management > Assets > System insights view. The tool always sends
+facet=system_insights; without it Falcon omits the usage, encryption and os_security fields.
+Also returned: used_disk_space_pct, available_disk_space_pct,
+average_memory_usage_pct, max_processor_usage, physical_core_count, encrypted_drives.
 Managed assets expose asset and configuration posture that the Hosts API does not carry:
 drive encryption (encryption_status, unencrypted_drives), OS security settings
 (os_security.* - Secure Boot, Credential Guard, IOMMU, VBS), and disk/memory/CPU capacity
