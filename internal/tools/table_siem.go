@@ -25,7 +25,8 @@ var siemTools = []Tool{
 				Inputs: []string{"query", "repository", "start", "end", "cursor"}},
 		}},
 	{Name: "falcon_correlation_rule", Group: "siem", Title: "Correlation rules",
-		Description: "Next-Gen SIEM correlation rules: scheduled detection searches with severity and MITRE mapping.",
+		Description: "Next-Gen SIEM correlation rules: scheduled detection searches with severity and MITRE mapping. " +
+			"To create, update or delete a rule, call falcon_api with entities_rules_post_v1 (detection-add), entities_rules_patch_v1 or entities_rules_delete_v1 (detection-remove).",
 		Actions: []Action{
 			{Name: "search", Help: "correlation rules matching filter, e.g. status:'active'; add state:'published' for one row per rule; sort created_on|desc or last_updated_on|desc; params q (free text). One rule: filter rule_id:'...'.", Kind: Search,
 				Op: "combined_rules_get_v2", Params: []string{"q"}, Brief: correlationRuleBrief, Guide: "falcon://correlation-rules/search/fql-guide"},
