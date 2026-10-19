@@ -112,6 +112,19 @@ func TestPerTypeDropping(t *testing.T) {
 	}
 }
 
+func TestWorkflowExportAsksForYAML(t *testing.T) {
+	var accept, q string
+	cs := sessionWith(t, &config.Config{}, nil, http.StatusOK, func(w http.ResponseWriter, r *http.Request) {
+		accept, q = r.Header.Get("Accept"), r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/yaml")
+		io.WriteString(w, "name: w\ntrigger:\n  type: On demand\n")
+	})
+	out, isErr, text := callTool(t, cs, "falcon_workflow", map[string]any{"action": "export", "ids": []string{"d1"}, "params": map[string]any{"sanitize": "true"}})
+	if isErr || out["results"] != "name: w\ntrigger:\n  type: On demand\n" || accept != "application/yaml" || q != "id=d1&sanitize=true" {
+		t.Errorf("export: %s %v accept=%q query=%q", text, out, accept, q)
+	}
+}
+
 func TestParamsAndFiles(t *testing.T) {
 	var got []request
 	cs := sessionWith(t, &config.Config{}, nil, http.StatusCreated, func(w http.ResponseWriter, r *http.Request) {

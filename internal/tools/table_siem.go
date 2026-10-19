@@ -37,6 +37,8 @@ var siemTools = []Tool{
 		Actions: []Action{
 			{Name: "search_definitions", Help: "workflow definitions matching filter; match names with name.raw, e.g. name.raw:*'*Contain*'; sort with a dot, e.g. last_modified_timestamp.desc (pipe is rejected). Records are large: narrow the filter.", Kind: Search,
 				Op: "WorkflowDefinitionsCombined", Brief: workflowDefBrief, Guide: "falcon://fusion/workflow-definitions/fql-guide"},
+			{Name: "export", Help: "one workflow definition as YAML text (ids: one definition id), the form import takes; params sanitize=true strips tenant-specific values.", Kind: Get,
+				Op: "WorkflowDefinitionsExport", IDs: "one:id", Params: []string{"sanitize"}},
 			{Name: "search_executions", Help: "workflow runs matching filter, e.g. ui_status:'Failed'+started_timestamp:>'now-7d'; sort e.g. started_timestamp.desc; params skip_fields (comma-joined: trigger,activities,flows,submodels) to shrink records.", Kind: Search,
 				Op: "WorkflowExecutionsCombined", Params: []string{"skip_fields"}, Brief: workflowExecBrief, Guide: "falcon://fusion/workflow-executions/fql-guide"},
 			{Name: "get_execution_results", Help: "one execution with every activity's result (ids: one execution id); params skip_fields (comma-joined) to shrink it.", Kind: Get,

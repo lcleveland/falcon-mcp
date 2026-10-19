@@ -6,6 +6,7 @@ package falcon
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -241,6 +242,9 @@ type Multipart struct {
 
 var pathParam = regexp.MustCompile(`\{\w+\}`)
 
+// accepts are ops that serve no JSON: asking for it gets a 406.
+var accepts = map[string]string{"WorkflowDefinitionsExport": "application/yaml"}
+
 // Do calls one operation and returns its raw JSON (nil for an empty body).
 // Non-2xx replies return *APIError. Reads are retried once on a 429 or 5xx;
 // writes never are, since Falcon takes no idempotency keys.
@@ -281,7 +285,7 @@ func (c *Client) DoOp(ctx context.Context, id string, op Op, p Params) (json.Raw
 			return nil, err
 		}
 		req.Header.Set("Authorization", "Bearer "+tok)
-		req.Header.Set("Accept", "application/json")
+		req.Header.Set("Accept", cmp.Or(accepts[id], "application/json"))
 		// Falcon wants this even on an empty body.
 		req.Header.Set("Content-Type", contentType)
 
