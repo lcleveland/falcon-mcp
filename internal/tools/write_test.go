@@ -390,7 +390,8 @@ func TestCapabilityMap(t *testing.T) {
 
 		"falcon_host hide_host": "destructive", "falcon_host unhide_host": "destructive", "falcon_quarantine delete": "destructive",
 
-		"falcon_workflow execute": "workflows", "falcon_workflow import": "workflows", "falcon_report launch": "workflows",
+		"falcon_workflow execute": "workflows", "falcon_workflow import": "workflows",
+		"falcon_workflow update": "workflows", "falcon_workflow enable": "workflows", "falcon_workflow disable": "workflows", "falcon_workflow delete": "workflows", "falcon_report launch": "workflows",
 
 		"falcon_rtr init_session": "rtr-read", "falcon_rtr pulse_session": "rtr-read", "falcon_rtr delete_session": "rtr-read",
 		"falcon_rtr run_command": "rtr-read", "falcon_rtr init_batch": "rtr-read", "falcon_rtr pulse_batch": "rtr-read",
@@ -706,5 +707,32 @@ func TestRawReturnsReplyAsSent(t *testing.T) {
 	}
 	if _, isErr, text := call("falcon_workflow", map[string]any{"action": "search_definitions", "raw": true}); !isErr || !strings.Contains(text, "raw is for") {
 		t.Errorf("search raw: %s", text)
+	}
+}
+
+func TestWorkflowDefinitionWrites(t *testing.T) {
+	f := &fakeWrites{}
+	call, _ := writeSession(t, []string{"workflows"}, 0, f)
+	for _, c := range []struct {
+		args                      map[string]any
+		method, path, query, body string
+	}{
+		{map[string]any{"action": "enable", "ids": []string{"d1", "d2"}}, "POST", "/workflows/entities/definition-actions/v1", "action_name=enable", `{"ids":["d1","d2"]}`},
+		{map[string]any{"action": "disable", "ids": []string{"d1"}}, "POST", "/workflows/entities/definition-actions/v1", "action_name=disable", `{"ids":["d1"]}`},
+		{map[string]any{"action": "delete", "ids": []string{"d1", "d2"}}, "DELETE", "/workflows/entities/definitions/v1", "ids=d1&ids=d2", ""},
+		{map[string]any{"action": "update", "body": map[string]any{"id": "d1", "name": "w"}, "params": map[string]any{"validate_only": "true"}}, "PUT", "/workflows/entities/definitions/v1", "validate_only=true", `{"id":"d1","name":"w"}`},
+	} {
+		f.reset()
+		c.args["reason"] = "r"
+		if _, isErr, text := call("falcon_workflow", c.args); isErr {
+			t.Fatalf("%v: %s", c.args["action"], text)
+		}
+		w := f.writes()
+		if len(w) != 1 || w[0].Method != c.method || w[0].Path != c.path || w[0].Query != c.query || w[0].Body != c.body {
+			t.Errorf("%v: writes = %+v", c.args["action"], w)
+		}
+	}
+	if _, isErr, text := call("falcon_workflow", map[string]any{"action": "update", "body": map[string]any{"name": "w"}, "reason": "r"}); !isErr || !strings.Contains(text, "with its id") {
+		t.Errorf("update without id: %s", text)
 	}
 }

@@ -2,6 +2,7 @@ package tools
 
 import (
 	"errors"
+	"net/url"
 	"strings"
 
 	"github.com/lcleveland/falcon-mcp/internal/falcon"
@@ -49,6 +50,14 @@ var siemTools = []Tool{
 			{Name: "import", Help: "create a workflow from a YAML definition (body: the YAML text, as an export returns it); params name (overrides the YAML's), validate_only=true to check it without creating. " +
 				"Falcon creates and edits workflows only as YAML. An imported workflow runs on its trigger if enabled.",
 				Kind: Write, Capability: "workflows", Op: "WorkflowDefinitionsImport", Inputs: []string{"body"}, Params: []string{"name", "validate_only"}, Brief: workflowDefBrief, Send: workflowImport},
+			{Name: "update", Help: "replace a workflow definition; body is the whole definition as JSON, with its id (as search_definitions returns it, fields id, name, description, trigger, actions, conditions, enabled); params validate_only=true to check it without saving. Fields left out are dropped from the workflow.",
+				Kind: Write, Capability: "workflows", Op: "WorkflowDefinitionsUpdate", Inputs: []string{"body"}, Params: []string{"validate_only"}, Brief: workflowDefBrief, Send: workflowUpdate},
+			{Name: "enable", Help: "enable workflow definitions by id (ids); they run on their next trigger event. Imports always arrive disabled.",
+				Kind: Write, Capability: "workflows", Op: "WorkflowDefinitionsAction", Target: TargetIDs, Send: workflowAction("enable")},
+			{Name: "disable", Help: "disable workflow definitions by id (ids); in-flight runs finish, new trigger events are ignored.",
+				Kind: Write, Capability: "workflows", Op: "WorkflowDefinitionsAction", Target: TargetIDs, Send: workflowAction("disable")},
+			{Name: "delete", Help: "delete workflow definitions, with every version, by id (ids). There is no undo: export first to keep a copy.",
+				Kind: Write, Capability: "workflows", Op: "WorkflowDefinitionsDelete", Target: TargetIDs, MaxIDs: maxQueryIDs, Send: deleteIDs(false)},
 		}},
 	{Name: "falcon_report", Group: "siem", Title: "Scheduled reports",
 		Description: "Scheduled reports and scheduled searches, and their executions. Launching a report is a separate, opt-in capability.",
@@ -83,6 +92,20 @@ func workflowImport(w WriteCall) (falcon.Params, error) {
 		return falcon.Params{}, errors.New("this action needs body: the workflow's YAML definition, as text")
 	}
 	return falcon.Params{Query: w.Values, Body: falcon.Multipart{FileName: "workflow.yaml", FilePart: "data_file", File: []byte(yaml)}}, nil
+}
+
+func workflowUpdate(w WriteCall) (falcon.Params, error) {
+	def, _ := w.Body.(map[string]any)
+	if id, _ := def["id"].(string); id == "" {
+		return falcon.Params{}, errors.New("this action needs body: the whole workflow definition, with its id")
+	}
+	return falcon.Params{Query: w.Values, Body: def}, nil
+}
+
+func workflowAction(name string) sender {
+	return func(w WriteCall) (falcon.Params, error) {
+		return falcon.Params{Query: url.Values{"action_name": {name}}, Body: map[string]any{"ids": w.Targets}}, nil
+	}
 }
 
 func reportLaunch(w WriteCall) (falcon.Params, error) {

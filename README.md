@@ -76,7 +76,7 @@ All are off by default. A disabled capability's actions are removed from the too
 | `--allow-rtr-read` | `falcon_rtr` sessions, batch sessions, listing session files, and read-only commands on live hosts: `cat`, `cd`, `env`, `eventlog list`/`view`, `filehash`, `getsid`, `ipconfig`, `ls`, `mount`, `netstat`, `ps`, `pwd`, `reg query`, `users` (Mac and Linux) |
 | `--allow-rtr-respond` | `falcon_rtr` run_responder_command on one host: `cp`, `get`, `kill`, `memdump`, `mkdir`, `mv`, `put`, `reg` delete/load/set/unload, `rm`, `umount`, `xmemdump`, `zip` |
 | `--allow-destructive` | `falcon_host` hide_host, unhide_host; `falcon_quarantine` delete |
-| `--allow-workflows` | `falcon_workflow` execute, `falcon_report` launch; through `falcon_api`, invoking an AgentWorks agent |
+| `--allow-workflows` | `falcon_workflow` execute, import, update, enable, disable, delete; `falcon_report` launch; through `falcon_api`, invoking an AgentWorks agent |
 
 **Write safety:**
 - Every write requires `reason`. It goes to the audit log (with the tool, action, capability, target ids and Falcon's trace ID) before the call is sent and again with the outcome. Where Falcon has a comment or note field, the reason goes there too: alert comments, the note on containment and detection suppression, and the comment on quarantine, custom IOA, IOC, exclusion and firewall rule-group writes. Elsewhere (RTR, cases, workflow and report runs) it is audit-logged only.
