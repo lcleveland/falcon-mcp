@@ -47,6 +47,7 @@ var extra = map[string]string{
 	"RTR_ExecuteActiveResponderCommand":     "Real time response:write",
 	"RTR_CheckActiveResponderCommandStatus": "Real time response:write",
 	"BatchActiveResponderCmd":               "Real time response:write",
+	"WorkflowDefinitionsImport":             "Workflows:write",
 	// Probe routes for read scopes upstream reaches only through POSTs,
 	// required filters or write scopes.
 	"query_hosts":          "Assets:read",

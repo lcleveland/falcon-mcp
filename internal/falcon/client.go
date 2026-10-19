@@ -231,10 +231,11 @@ type Params struct {
 	Body  any // JSON-encoded, or a Multipart
 }
 
-// Multipart is a multipart/form-data body, for RTR uploads.
+// Multipart is a multipart/form-data body, for RTR and workflow uploads.
 type Multipart struct {
 	Fields   map[string]string
-	FileName string // sent as the "file" part when set
+	FileName string // sent as the file part when set
+	FilePart string // the file part's name; "file" when empty
 	File     []byte
 }
 
@@ -355,7 +356,11 @@ func encode(body any) ([]byte, string, error) {
 			w.WriteField(k, v)
 		}
 		if mp.FileName != "" {
-			fw, err := w.CreateFormFile("file", mp.FileName)
+			part := mp.FilePart
+			if part == "" {
+				part = "file"
+			}
+			fw, err := w.CreateFormFile(part, mp.FileName)
 			if err != nil {
 				return nil, "", err
 			}

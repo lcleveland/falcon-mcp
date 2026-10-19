@@ -390,7 +390,7 @@ func TestCapabilityMap(t *testing.T) {
 
 		"falcon_host hide_host": "destructive", "falcon_host unhide_host": "destructive", "falcon_quarantine delete": "destructive",
 
-		"falcon_workflow execute": "workflows", "falcon_report launch": "workflows",
+		"falcon_workflow execute": "workflows", "falcon_workflow import": "workflows", "falcon_report launch": "workflows",
 
 		"falcon_rtr init_session": "rtr-read", "falcon_rtr pulse_session": "rtr-read", "falcon_rtr delete_session": "rtr-read",
 		"falcon_rtr run_command": "rtr-read", "falcon_rtr init_batch": "rtr-read", "falcon_rtr pulse_batch": "rtr-read",
@@ -651,6 +651,7 @@ func TestDetectionFleetWorkflowWrites(t *testing.T) {
 		{"falcon_custom_ioa", map[string]any{"action": "enable_rules", "id": "g1", "ids": []string{"9"}}},
 		{"falcon_host_group", map[string]any{"action": "add_hosts", "id": "hg1", "ids": []string{"a1'],hostname:*'"}}},
 		{"falcon_workflow", map[string]any{"action": "execute"}},
+		{"falcon_workflow", map[string]any{"action": "import", "body": map[string]any{"name": "w"}}},
 		{"falcon_policy", map[string]any{"action": "perform", "policy_type": "prevention", "id": "p1"}},
 		{"falcon_exclusion", map[string]any{"action": "update", "exclusion_type": "ml", "body": map[string]any{"value": "/y"}}},
 	} {
@@ -671,5 +672,19 @@ func TestEmptyWriteReplyNamesTargets(t *testing.T) {
 	}
 	if got, _ := out["applied_to"].([]any); len(got) != 1 || got[0] != "g1" {
 		t.Errorf("out = %v", out)
+	}
+}
+
+func TestWorkflowImportSendsYAMLFile(t *testing.T) {
+	f := &fakeWrites{}
+	call, _ := writeSession(t, []string{"workflows"}, 0, f)
+	yaml := "name: w\ntrigger:\n  type: On demand\n"
+	if _, isErr, text := call("falcon_workflow", map[string]any{"action": "import", "body": yaml, "params": map[string]any{"validate_only": "true"}, "reason": "r"}); isErr {
+		t.Fatal(text)
+	}
+	w := f.writes()
+	if len(w) != 1 || w[0].Path != "/workflows/entities/definitions/import/v1" || w[0].Query != "validate_only=true" ||
+		!strings.Contains(w[0].Body, `name="data_file"; filename="workflow.yaml"`) || !strings.Contains(w[0].Body, yaml) {
+		t.Errorf("writes = %+v", w)
 	}
 }

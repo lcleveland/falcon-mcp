@@ -2,6 +2,7 @@ package tools
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/lcleveland/falcon-mcp/internal/falcon"
 )
@@ -43,6 +44,9 @@ var siemTools = []Tool{
 			{Name: "execute", Help: "run an on-demand workflow; params definition_id or name, and key (deduplicates runs); body is the trigger input the workflow expects. " +
 				"It does whatever the workflow does, which may include containment. Workflows have no comment field: the reason is audit-logged only.",
 				Kind: Write, Capability: "workflows", Op: "WorkflowExecute", Inputs: []string{"body"}, Params: []string{"definition_id", "name", "key"}, Send: workflowExecute},
+			{Name: "import", Help: "create a workflow from a YAML definition (body: the YAML text, as an export returns it); params name (overrides the YAML's), validate_only=true to check it without creating. " +
+				"Falcon creates and edits workflows only as YAML. An imported workflow runs on its trigger if enabled.",
+				Kind: Write, Capability: "workflows", Op: "WorkflowDefinitionsImport", Inputs: []string{"body"}, Params: []string{"name", "validate_only"}, Brief: workflowDefBrief, Send: workflowImport},
 		}},
 	{Name: "falcon_report", Group: "siem", Title: "Scheduled reports",
 		Description: "Scheduled reports and scheduled searches, and their executions. Launching a report is a separate, opt-in capability.",
@@ -69,6 +73,14 @@ func workflowExecute(w WriteCall) (falcon.Params, error) {
 		body = map[string]any{}
 	}
 	return falcon.Params{Query: w.Values, Body: body}, nil
+}
+
+func workflowImport(w WriteCall) (falcon.Params, error) {
+	yaml, _ := w.Body.(string)
+	if strings.TrimSpace(yaml) == "" {
+		return falcon.Params{}, errors.New("this action needs body: the workflow's YAML definition, as text")
+	}
+	return falcon.Params{Query: w.Values, Body: falcon.Multipart{FileName: "workflow.yaml", FilePart: "data_file", File: []byte(yaml)}}, nil
 }
 
 func reportLaunch(w WriteCall) (falcon.Params, error) {
