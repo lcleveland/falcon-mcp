@@ -57,7 +57,7 @@ Searches:
 - cap results at 200 items and 60 KiB, adding a `_truncation` note when they have to cut;
 - return `next_cursor` when there is more. Pass it back as `cursor`. It hides Falcon's offset and `after` paging.
 
-Gets take up to 200 `ids`. Timestamps come back as RFC 3339 UTC. Reads are retried once on a 429 or 5xx, honouring `X-RateLimit-RetryAfter`.
+Gets take up to 200 `ids`. Get, aggregate and write actions take `raw: true` to return Falcon's reply as sent (meta, errors and every field, capped at 60 KiB) instead of the shaped result; searches refuse it, since they page over several replies. Timestamps come back as RFC 3339 UTC. Reads are retried once on a 429 or 5xx, honouring `X-RateLimit-RetryAfter`.
 
 `falcon_api` calls any operation in the generated table by its FalconPy operation ID, or by `method` and `path`. A write that a typed tool sends is refused there, with a pointer to that tool, so the typed tool's rails apply. The few writes no typed tool sends each belong to a capability or to "never" (a test enforces this). GETs outside the table are allowed; other methods outside it are refused.
 

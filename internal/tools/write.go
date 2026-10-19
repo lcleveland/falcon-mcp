@@ -83,6 +83,9 @@ func (d Deps) write(ctx context.Context, tool string, a Action, in Input) (map[s
 		return nil, err
 	}
 	d.Log.Info("falcon write", append(audit, "trace_id", env.Meta.TraceID)...)
+	if in.Raw {
+		return rawReply(env), nil
+	}
 	res := env.Resources
 	if res == nil {
 		res = env.Combined.Resources

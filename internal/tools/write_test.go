@@ -688,3 +688,23 @@ func TestWorkflowImportSendsYAMLFile(t *testing.T) {
 		t.Errorf("writes = %+v", w)
 	}
 }
+
+func TestRawReturnsReplyAsSent(t *testing.T) {
+	validate := `{"meta":{"trace_id":"t1"},"resources":[{"valid":false}],"errors":[{"code":400,"message":"unknown action"}]}`
+	f := &fakeWrites{replies: map[string]reply{
+		"POST /workflows/entities/definitions/import/v1": {http.StatusOK, validate},
+		"GET /workflows/entities/execution-results/v1":   {http.StatusOK, `{"meta":{"trace_id":"t2"},"resources":[{"id":"e1","extra":1}]}`},
+	}}
+	call, _ := writeSession(t, []string{"workflows"}, 0, f)
+	out, isErr, text := call("falcon_workflow", map[string]any{"action": "import", "body": "name: w\n", "raw": true, "reason": "r"})
+	if b, _ := json.Marshal(out["raw"]); isErr || !strings.Contains(string(b), `"message":"unknown action"`) || !strings.Contains(string(b), `"valid":false`) {
+		t.Errorf("write raw: %s %v", text, out)
+	}
+	out, isErr, text = call("falcon_workflow", map[string]any{"action": "get_execution_results", "ids": []string{"e1"}, "raw": true})
+	if b, _ := json.Marshal(out["raw"]); isErr || !strings.Contains(string(b), `"trace_id":"t2"`) || !strings.Contains(string(b), `"extra":1`) {
+		t.Errorf("get raw: %s %v", text, out)
+	}
+	if _, isErr, text := call("falcon_workflow", map[string]any{"action": "search_definitions", "raw": true}); !isErr || !strings.Contains(text, "raw is for") {
+		t.Errorf("search raw: %s", text)
+	}
+}

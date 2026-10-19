@@ -39,6 +39,7 @@ type Input struct {
 	IDs    []string `json:"ids,omitempty" jsonschema:"ids to fetch"`
 	ID     string   `json:"id,omitempty" jsonschema:"the one id the action is scoped to"`
 	Body   any      `json:"body,omitempty" jsonschema:"request body: an aggregation request, or for a write the record or fields it sends; the action help gives the shape"`
+	Raw    bool     `json:"raw,omitempty" jsonschema:"true returns Falcon's reply as sent (meta, errors and every field), capped in size; not for searches"`
 
 	PolicyType    string         `json:"policy_type,omitempty" jsonschema:"which kind of policy; the tool description lists the types per action"`
 	ExclusionType string         `json:"exclusion_type,omitempty" jsonschema:"which kind of exclusion; the tool description lists the types per action"`
@@ -70,8 +71,9 @@ func (a Action) inputs(typeParam string) []string {
 			in = append(in, "id")
 		}
 	case Get:
-		in = []string{"ids"}
+		in = []string{"ids", "raw"}
 	case Aggregate:
+		in = append(in, "raw")
 		if !a.NoFilter {
 			in = append(in, "filter")
 		}
@@ -84,7 +86,7 @@ func (a Action) inputs(typeParam string) []string {
 	case Custom:
 		in = a.Inputs
 	case Write:
-		in = append([]string{"reason"}, a.Inputs...)
+		in = append([]string{"reason", "raw"}, a.Inputs...)
 		switch a.Target {
 		case TargetIDs:
 			in = append(in, "ids")
@@ -159,6 +161,7 @@ type envelope struct {
 	Errors []struct {
 		Message string `json:"message"`
 	} `json:"errors"`
+	raw json.RawMessage // the reply as sent, for raw=true
 }
 
 func (d Deps) call(ctx context.Context, op string, p falcon.Params) (*envelope, error) {
@@ -166,7 +169,7 @@ func (d Deps) call(ctx context.Context, op string, p falcon.Params) (*envelope, 
 	if err != nil {
 		return nil, err
 	}
-	var env envelope
+	env := envelope{raw: raw}
 	if len(raw) > 0 && json.Unmarshal(raw, &env) != nil {
 		// Some routes serve a file: a bare JSON array, or text such as CSV.
 		var v any
@@ -186,6 +189,9 @@ func (d Deps) call(ctx context.Context, op string, p falcon.Params) (*envelope, 
 func (d Deps) read(ctx context.Context, tool string, a Action, in Input) (map[string]any, error) {
 	if in.Cursor != "" && !slices.Contains(a.inputs(""), "cursor") {
 		return nil, errors.New("cursor does not belong to this query: only search actions page")
+	}
+	if in.Raw && !slices.Contains(a.inputs(""), "raw") {
+		return nil, errors.New("raw is for get, aggregate and write actions: a search pages over several replies")
 	}
 	if a.NoFilter && (in.Filter != "" || in.Sort != "") {
 		return nil, errors.New("this action takes no filter or sort; its help lists the params it takes")
@@ -212,6 +218,9 @@ func (d Deps) read(ctx context.Context, tool string, a Action, in Input) (map[st
 		env, err := d.call(ctx, a.Op, p)
 		if err != nil {
 			return nil, err
+		}
+		if in.Raw {
+			return rawReply(env), nil
 		}
 		if t, ok := env.Resources.(string); ok {
 			return text(t), nil
@@ -326,6 +335,9 @@ func (d Deps) aggregate(ctx context.Context, a Action, in Input) (map[string]any
 	if err != nil {
 		return nil, err
 	}
+	if in.Raw {
+		return rawReply(env), nil
+	}
 	if t, ok := env.Resources.(string); ok {
 		return text(t), nil
 	}
@@ -346,6 +358,15 @@ func idParams(where string, ids []string) falcon.Params {
 	name, _ := strings.CutPrefix(where, "query:")
 	name, _ = strings.CutPrefix(name, "one:")
 	return falcon.Params{Query: url.Values{cmp.Or(name, "ids"): ids}}
+}
+
+// rawReply is Falcon's reply as sent, for raw=true: JSON as is, anything
+// else (or JSON too large to return whole) as capped text.
+func rawReply(env *envelope) map[string]any {
+	if len(env.raw) <= maxBytes && json.Valid(env.raw) {
+		return map[string]any{"raw": env.raw}
+	}
+	return text(string(env.raw))
 }
 
 // text caps a file served as text, such as a CSV report.
