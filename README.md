@@ -2,7 +2,7 @@
 
 An MCP server for the [CrowdStrike Falcon](https://www.crowdstrike.com/) REST API, written in Go. It serves over stdio or streamable HTTP and is packaged as a Nix flake with a NixOS module.
 
-The server is read-only by default. Writes are turned on per **capability** (triage, containment, RTR, ...), every write needs a reason that goes to the audit log, and some writes are never exposed at all: RTR admin commands and runscript, batch RTR responder commands, quarantine changes selected by query, permanent host deletion, revealing uninstall tokens or turning off uninstall protection, and user, API-client and installation-token administration.
+The server is read-only by default. Writes are turned on per **capability** (triage, containment, RTR, ...), every write needs a reason that goes to the audit log, and some writes are never exposed at all: RTR admin commands and runscript, batch RTR responder commands, quarantine changes selected by query, permanent host deletion, revealing or rotating the bulk maintenance token, turning off uninstall protection, and user, API-client and installation-token administration.
 
 ## Tools
 
@@ -10,7 +10,7 @@ The server is read-only by default. Writes are turned on per **capability** (tri
 |---|---|
 | core (always on) | `falcon_status` (auth, cloud, rate-limit headroom, the startup probe, and `action=guide`), `falcon_api` (any Falcon operation, capability-gated) |
 | respond | `falcon_alert`, `falcon_case`, `falcon_rtr` (Real Time Response), `falcon_quarantine` |
-| hosts | `falcon_host`, `falcon_host_group`, `falcon_discover` (applications, managed and unmanaged assets, logins, accounts), `falcon_zta` (Zero Trust Assessment), `falcon_sensor_usage` |
+| hosts | `falcon_host`, `falcon_host_group`, `falcon_discover` (applications, managed and unmanaged assets, logins, accounts), `falcon_zta` (Zero Trust Assessment), `falcon_sensor` (builds, kernels, installers), `falcon_sensor_usage` |
 | prevent | `falcon_policy` (by `policy_type`: prevention, sensor_update, firewall, device_control, response, content_update), `falcon_exclusion` (by `exclusion_type`: ioa, ml, sensor_visibility, certificate), `falcon_firewall`, `falcon_custom_ioa`, `falcon_ioc` |
 | intel | `falcon_intel` (actors, indicators, reports, MITRE reports), `falcon_recon` (Falcon Intelligence Recon) |
 | siem | `falcon_ngsiem` (CQL search), `falcon_correlation_rule`, `falcon_workflow` (Fusion SOAR), `falcon_report` (scheduled reports and searches) |
@@ -28,10 +28,11 @@ Every tool takes an `action`; each tool's description lists its actions and what
 | `falcon_case` | search, get, list_templates, aggregate_slas, aggregate_templates, aggregate_access_tags, aggregate_notification_groups, aggregate_file_details | create, update, add_alert_evidence, add_event_evidence, add_tags, remove_tags (triage) |
 | `falcon_rtr` | search_sessions, search_audit_sessions, aggregate_sessions, get_session | init_session, pulse_session, delete_session, run_command, check_command_status, list_files, init_batch, pulse_batch, run_batch_command (rtr-read); run_responder_command, check_responder_status (rtr-respond) |
 | `falcon_quarantine` | search, get, preview_actions | release, unrelease (detection-remove); delete (destructive) |
-| `falcon_host` | search, get, search_hidden, get_online_state, get_login_history, get_network_history | add_tags, remove_tags (host-tags); contain, lift_containment (containment); suppress_detections, unsuppress_detections (detection-remove); hide_host, unhide_host (destructive) |
+| `falcon_host` | search, get, search_hidden, get_online_state, get_login_history, get_network_history | add_tags, remove_tags (host-tags); contain, lift_containment (containment); suppress_detections, unsuppress_detections (detection-remove); hide_host, unhide_host (destructive); reveal_uninstall_token (uninstall-token) |
 | `falcon_host_group` | search, search_members | create, update, delete, add_hosts, remove_hosts (fleet-config) |
 | `falcon_discover` | search_applications, search_unmanaged_assets, search_managed_assets, search_logins, search_accounts |  |
 | `falcon_zta` | search, get, get_audit |  |
+| `falcon_sensor` | list_builds, search_kernels, search_installers |  |
 | `falcon_sensor_usage` | search_weekly |  |
 | `falcon_policy` | search, get, search_members | create, update, delete, perform, set_precedence (fleet-config) |
 | `falcon_exclusion` | search, get, get_certificate_details | create, update, delete (detection-remove) |
@@ -76,13 +77,14 @@ All are off by default. A disabled capability's actions are removed from the too
 | `--allow-rtr-read` | `falcon_rtr` sessions, batch sessions, listing session files, and read-only commands on live hosts: `cat`, `cd`, `env`, `eventlog list`/`view`, `filehash`, `getsid`, `ipconfig`, `ls`, `mount`, `netstat`, `ps`, `pwd`, `reg query`, `users` (Mac and Linux) |
 | `--allow-rtr-respond` | `falcon_rtr` run_responder_command on one host: `cp`, `get`, `kill`, `memdump`, `mkdir`, `mv`, `put`, `reg` delete/load/set/unload, `rm`, `umount`, `xmemdump`, `zip` |
 | `--allow-destructive` | `falcon_host` hide_host, unhide_host; `falcon_quarantine` delete |
+| `--allow-uninstall-token` | `falcon_host` reveal_uninstall_token: one host's uninstall (maintenance) token, confirmed by hostname, with the reason as Falcon's audit message. The bulk maintenance token is never revealed |
 | `--allow-workflows` | `falcon_workflow` execute, import, update, enable, disable, delete; `falcon_report` launch; through `falcon_api`, invoking an AgentWorks agent |
 
 **Write safety:**
 - Every write requires `reason`. It goes to the audit log (with the tool, action, capability, target ids and Falcon's trace ID) before the call is sent and again with the outcome. Where Falcon has a comment or note field, the reason goes there too: alert comments, the note on containment and detection suppression, and the comment on quarantine, custom IOA, IOC, exclusion and firewall rule-group writes. Elsewhere (RTR, cases, workflow and report runs) it is audit-logged only.
 - A write touches at most `--max-bulk` records (1000), or Falcon's own per-call limit when that is lower.
 - Writes that act on records take `ids`; some (alert updates, for one) take a `filter` instead. A filter is first resolved to ids with reads only; if it matches nothing, or more than the limit, nothing is sent. Otherwise the reply says how many records it matches, and the write runs only when repeated with `confirm` equal to that count.
-- Host actions (contain, lift containment, suppress detections, hide and unhide, RTR responder commands) take exactly one device id and need `confirm` equal to that host's hostname. A mismatch fails before anything is sent.
+- Host actions (contain, lift containment, suppress detections, hide and unhide, uninstall-token reveal, RTR responder commands) take exactly one device id and need `confirm` equal to that host's hostname. A mismatch fails before anything is sent.
 - Writes are never retried automatically. Falcon takes no idempotency keys, so a retried write could happen twice.
 
 ## Probe
@@ -236,8 +238,8 @@ Every scope, in the console's order; leave the "not used" ones unticked. **Read*
 | Sample uploads | not used | |
 | Scheduled Reports | siem (also report launch) | |
 | IOA Exclusions | prevent | detection-remove |
-| Sensor Download | not used | |
-| Sensor update policies | prevent | fleet-config |
+| Sensor Download | hosts | |
+| Sensor update policies | prevent, hosts | fleet-config, uninstall-token |
 | Sensor Usage | hosts | |
 | Sensor Visibility Exclusions | prevent | detection-remove |
 | Event streams | not used | |

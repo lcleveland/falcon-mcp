@@ -39,6 +39,7 @@ let
     "rtr-respond"
     "destructive"
     "workflows"
+    "uninstall-token"
   ];
   # "host:port" or "[v6]:port" -> [ host port ], as Go's net.SplitHostPort.
   v6 = builtins.match "\\[([^]]+)]:([0-9]+)" cfg.http.addr;
@@ -251,7 +252,8 @@ in
 
       warnings =
         optional cfg.allow.destructive "services.falcon-mcp.allow.destructive is true: a model can make irreversible bulk changes to the tenant."
-        ++ optional cfg.allow.rtr-respond "services.falcon-mcp.allow.rtr-respond is true: a model can kill processes and delete or place files on hosts.";
+        ++ optional cfg.allow.rtr-respond "services.falcon-mcp.allow.rtr-respond is true: a model can kill processes and delete or place files on hosts."
+        ++ optional cfg.allow.uninstall-token "services.falcon-mcp.allow.uninstall-token is true: a model can read a host's sensor uninstall token.";
 
       systemd.services.falcon-mcp = {
         description = "CrowdStrike Falcon MCP server";

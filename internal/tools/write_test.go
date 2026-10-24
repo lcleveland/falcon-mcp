@@ -389,6 +389,7 @@ func TestCapabilityMap(t *testing.T) {
 		"falcon_firewall delete_rule_groups": "fleet-config",
 
 		"falcon_host hide_host": "destructive", "falcon_host unhide_host": "destructive", "falcon_quarantine delete": "destructive",
+		"falcon_host reveal_uninstall_token": "uninstall-token",
 
 		"falcon_workflow execute": "workflows", "falcon_workflow import": "workflows",
 		"falcon_workflow update": "workflows", "falcon_workflow enable": "workflows", "falcon_workflow disable": "workflows", "falcon_workflow delete": "workflows", "falcon_report launch": "workflows",
@@ -433,7 +434,7 @@ func TestCapabilityMap(t *testing.T) {
 // Never exposed, whatever the flags: no tool reaches these routes.
 func TestNeverExposed(t *testing.T) {
 	never := []string{"devices-actions-delete", "admin-command", "/real-time-response/entities/scripts", "/real-time-response/entities/put-files",
-		"uninstall-token", "/user-management/", "/installation-tokens/", "/api-clients/"}
+		"increment-uninstall-token", "/user-management/", "/installation-tokens/", "/api-clients/"}
 	cfg := &config.Config{Allow: map[string]bool{}, MaxBulk: 1000}
 	for _, c := range config.Capabilities {
 		cfg.Allow[c] = true
@@ -734,5 +735,37 @@ func TestWorkflowDefinitionWrites(t *testing.T) {
 	}
 	if _, isErr, text := call("falcon_workflow", map[string]any{"action": "update", "body": map[string]any{"name": "w"}, "reason": "r"}); !isErr || !strings.Contains(text, "with its id") {
 		t.Errorf("update without id: %s", text)
+	}
+}
+
+// An uninstall token is revealed for one confirmed host, with the reason
+// as Falcon's audit message, and never for the bulk maintenance token.
+func TestRevealUninstallToken(t *testing.T) {
+	f := &fakeWrites{replies: map[string]reply{
+		"POST /devices/entities/devices/v2":               {200, `{"resources":[{"device_id":"aid-1","hostname":"WS-0001"}]}`},
+		"POST /policy/combined/reveal-uninstall-token/v1": {200, `{"resources":[{"device_id":"aid-1","uninstall_token":"tok"}]}`},
+	}}
+	call, logs := writeSession(t, []string{"uninstall-token"}, 0, f)
+	if _, isErr, text := call("falcon_host", map[string]any{"action": "reveal_uninstall_token", "id": "MAINTENANCE", "confirm": "MAINTENANCE", "reason": "bulk"}); !isErr || !strings.Contains(text, "no host") {
+		t.Errorf("bulk token: %s", text)
+	}
+	if w := f.writes(); len(w) != 0 {
+		t.Fatalf("sent %+v", w)
+	}
+	out, isErr, text := call("falcon_host", map[string]any{"action": "reveal_uninstall_token", "id": "aid-1", "confirm": "WS-0001", "reason": "reinstall sensor"})
+	if isErr || !strings.Contains(fmt.Sprint(out["results"]), "tok") {
+		t.Fatalf("%s %v", text, out)
+	}
+	if w := f.writes(); len(w) != 1 || w[0].Body != `{"audit_message":"reinstall sensor","device_id":"aid-1"}` {
+		t.Errorf("writes = %+v", w)
+	}
+	if strings.Contains(logs.String(), "tok\"") {
+		t.Error("token reached the log")
+	}
+
+	// Without the capability the action is not offered.
+	call, _ = writeSession(t, []string{"destructive"}, 0, f)
+	if _, isErr, _ := call("falcon_host", map[string]any{"action": "reveal_uninstall_token", "id": "aid-1", "confirm": "WS-0001", "reason": "r"}); !isErr {
+		t.Error("revealed without uninstall-token")
 	}
 }

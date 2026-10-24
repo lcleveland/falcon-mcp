@@ -49,6 +49,8 @@ var hostsTools = []Tool{
 				Kind: Write, Capability: "destructive", Op: "PerformActionV2", Target: TargetHost, Send: hostAction("hide_host")},
 			{Name: "unhide_host", Help: "restore one hidden host by device id (id), with confirm=<its hostname>.",
 				Kind: Write, Capability: "destructive", Op: "PerformActionV2", Target: TargetHost, Send: hostAction("unhide_host")},
+			{Name: "reveal_uninstall_token", Help: "the uninstall (maintenance) token of one host by device id (id), with confirm=<its hostname>: it lets anyone at that host remove or downgrade the sensor. The reason is sent as Falcon's audit message. The bulk token is never revealed.",
+				Kind: Write, Capability: "uninstall-token", Op: "revealUninstallToken", Target: TargetHost, Send: uninstallToken},
 		}},
 	{Name: "falcon_host_group", Group: "hosts", Title: "Host groups",
 		Description: "Host groups, which policies are assigned to, and their members.",
@@ -100,6 +102,18 @@ var hostsTools = []Tool{
 			{Name: "get_audit", Help: "the tenant-wide score summary: per platform, its score, host count and gaps (signals met by fewer than all hosts, with the share that meet them); params detail (true for every signal).",
 				Kind: Custom, Op: "getAuditV1", Run: ztaAudit, Params: []string{"detail"}},
 		}},
+	{Name: "falcon_sensor", Group: "hosts", Title: "Sensor builds and installers",
+		Description: "Falcon sensor versions: builds sensor update policies can pin, Linux kernel support, and the installers to download.",
+		Actions: []Action{
+			{Name: "list_builds", Help: "sensor builds a sensor update policy can use, with their stage and LTS flag; params platform (windows|mac|linux) and stage (prod|early_adopter).", Kind: Aggregate,
+				Op: "queryCombinedSensorUpdateBuilds", NoFilter: true, Params: []string{"platform", "stage"}},
+			{Name: "search_kernels", Help: "Linux kernels and the sensor versions that support them, matching filter, e.g. vendor:'ubuntu'+release:'5.15*'.", Kind: Search,
+				Op: "queryCombinedSensorUpdateKernels", MaxLimit: 500,
+				Brief: []string{"vendor", "distro", "distro_version", "release", "architecture", "base_package_supported_sensor_versions"}},
+			{Name: "search_installers", Help: "sensor installers matching filter, e.g. platform:'windows'+version:>'7.20'; sort release_date|desc. Returns name, version, sha256 and release date; download them from the console.", Kind: Search,
+				Op: "GetCombinedSensorInstallersByQueryV2", MaxLimit: 500,
+				Brief: []string{"name", "platform", "os", "version", "release_date", "file_type", "sha256"}},
+		}},
 	{Name: "falcon_sensor_usage", Group: "hosts", Title: "Sensor usage",
 		Description: "Weekly average sensor counts, as billed.",
 		Actions: []Action{
@@ -145,6 +159,13 @@ func ztaAudit(ctx context.Context, d Deps, in Input) (map[string]any, error) {
 		}
 	}
 	return shape(items, in.Fields, "", noteGet, env), nil
+}
+
+// uninstallToken reveals one host's token. TargetHost resolves the id to a
+// real host first, so the bulk token's device id ("MAINTENANCE") never
+// reaches Falcon.
+func uninstallToken(w WriteCall) (falcon.Params, error) {
+	return falcon.Params{Body: map[string]any{"device_id": w.Targets[0], "audit_message": w.Reason}}, nil
 }
 
 // maxTags is UpdateDeviceTags' limit; it fails the whole call above it.

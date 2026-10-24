@@ -63,6 +63,10 @@ var extra = map[string]string{
 	"get_logins":                            "Assets:read",
 	"query_accounts":                        "Assets:read",
 	"get_accounts":                          "Assets:read",
+	"queryCombinedSensorUpdateBuilds":       "Sensor Update Policies:read",
+	"queryCombinedSensorUpdateKernels":      "Sensor Update Policies:read",
+	"GetCombinedSensorInstallersByQueryV2":  "Sensor Download:read",
+	"revealUninstallToken":                  "Sensor Update Policies:write",
 	// Probe routes for read scopes upstream reaches only through POSTs,
 	// required filters or write scopes.
 	"query_hosts":          "Assets:read",

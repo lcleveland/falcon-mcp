@@ -61,6 +61,7 @@ var probes = map[string]struct{ op, query string }{
 	"Response Policies:read":                            {"queryRTResponsePolicies", "limit=1"},
 	"SaaS Security:read":                                {"GetSupportedSaasV3", ""},
 	"Scheduled Reports:read":                            {"scheduled_reports_query", "limit=1"},
+	"Sensor Download:read":                              {"GetCombinedSensorInstallersByQueryV2", "limit=1"},
 	"Sensor Update Policies:read":                       {"querySensorUpdatePolicies", "limit=1"},
 	"Sensor Usage:read":                                 {"GetSensorUsageWeekly", ""},
 	"Sensor Visibility Exclusions:read":                 {"querySensorVisibilityExclusionsV1", "limit=1"},

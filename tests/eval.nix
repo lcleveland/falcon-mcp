@@ -190,6 +190,9 @@ in
   module-rtr-respond-warn = warns "rtr-respond-warn" {
     allow.rtr-respond = true;
   } "allow.rtr-respond is true";
+  module-uninstall-token-warn = warns "uninstall-token-warn" {
+    allow.uninstall-token = true;
+  } "allow.uninstall-token is true";
 
   module-no-secret = mustFail "no-secret" { clientSecretFile = null; } "clientSecretFile";
   module-secret-in-store = mustFail "secret-in-store" {
