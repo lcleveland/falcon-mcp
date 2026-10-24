@@ -28,7 +28,7 @@ Every tool takes an `action`; each tool's description lists its actions and what
 | `falcon_case` | search, get, list_templates, aggregate_slas, aggregate_templates, aggregate_access_tags, aggregate_notification_groups, aggregate_file_details | create, update, add_alert_evidence, add_event_evidence, add_tags, remove_tags (triage) |
 | `falcon_rtr` | search_sessions, search_audit_sessions, aggregate_sessions, get_session | init_session, pulse_session, delete_session, run_command, check_command_status, list_files, init_batch, pulse_batch, run_batch_command (rtr-read); run_responder_command, check_responder_status (rtr-respond) |
 | `falcon_quarantine` | search, get, preview_actions | release, unrelease (detection-remove); delete (destructive) |
-| `falcon_host` | search, get | add_tags, remove_tags (host-tags); contain, lift_containment (containment); suppress_detections, unsuppress_detections (detection-remove); hide_host, unhide_host (destructive) |
+| `falcon_host` | search, get, search_hidden, get_online_state, get_login_history, get_network_history | add_tags, remove_tags (host-tags); contain, lift_containment (containment); suppress_detections, unsuppress_detections (detection-remove); hide_host, unhide_host (destructive) |
 | `falcon_host_group` | search, search_members | create, update, delete, add_hosts, remove_hosts (fleet-config) |
 | `falcon_discover` | search_applications, search_unmanaged_assets, search_managed_assets |  |
 | `falcon_zta` | search, get, get_audit |  |

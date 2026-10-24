@@ -52,6 +52,10 @@ var extra = map[string]string{
 	"WorkflowDefinitionsExport":             "Workflows:read",
 	"WorkflowDefinitionsImport":             "Workflows:write",
 	"WorkflowDefinitionsUpdate":             "Workflows:write",
+	"QueryHiddenDevices":                    "Hosts:read",
+	"GetOnlineState_V1":                     "Hosts:read",
+	"QueryDeviceLoginHistoryV2":             "Hosts:read",
+	"QueryGetNetworkAddressHistoryV1":       "Hosts:read",
 	// Probe routes for read scopes upstream reaches only through POSTs,
 	// required filters or write scopes.
 	"query_hosts":          "Assets:read",
@@ -74,6 +78,7 @@ var reads = []string{
 	"RTR_ListSessions", "RTR_AggregateSessions", "GetQuarantineFiles",
 	"AggregateNotificationsV1", "AggregateNotificationsExposedDataRecordsV1", "PreviewRuleV1",
 	"StartSearchV1", "StopSearchV1", "post_graphql",
+	"QueryDeviceLoginHistoryV2", "QueryGetNetworkAddressHistoryV1",
 }
 
 var (

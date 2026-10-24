@@ -386,3 +386,22 @@ func TestZTAAuditKeepsGaps(t *testing.T) {
 		t.Error("unknown param accepted")
 	}
 }
+
+// Login history is a POST read: ids in the body, the window in the query.
+func TestHostLoginHistory(t *testing.T) {
+	f := &fakeWrites{replies: map[string]reply{"POST /devices/combined/devices/login-history/v2": {200,
+		`{"resources":[{"device_id":"d1","recent_logins":[{"user_name":"u","login_time":"2026-01-02T03:04:05Z"}]}]}`}}}
+	call, _ := writeSession(t, nil, 0, f)
+	out, isErr, text := call("falcon_host", map[string]any{"action": "get_login_history", "ids": []string{"d1"},
+		"params": map[string]any{"from": "2026-01-01T00:00:00Z", "limit": 5.0}})
+	if isErr || len(list(out["results"])) != 1 {
+		t.Fatalf("%s %v", text, out)
+	}
+	r := f.requests()
+	if len(r) != 1 || r[0].Method != http.MethodPost || r[0].Body != `{"ids":["d1"]}` {
+		t.Fatalf("requests = %+v", r)
+	}
+	if q := query(t, r[0].Query); q.Get("from") != "2026-01-01T00:00:00Z" || q.Get("limit") != "5" {
+		t.Errorf("query = %s", r[0].Query)
+	}
+}
