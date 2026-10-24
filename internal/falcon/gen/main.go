@@ -31,7 +31,7 @@ import (
 
 const (
 	falconpyRev = "06a5df86bc68e492db339dccacdff4a9b9ad61ec" // 2026-09-24
-	upstreamRev = "82d5031dddca464bb81d74bfec31fcc51a0d5854" // falcon-mcp v0.19.0
+	upstreamRev = "608986fa620e4d24f461992f021c0c941d3fbcbe" // falcon-mcp v0.20.0
 )
 
 // extra are operations the tool table uses beyond upstream's scope map,

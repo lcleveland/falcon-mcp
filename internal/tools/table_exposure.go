@@ -97,12 +97,12 @@ var exposureTools = []Tool{
 		Actions: []Action{
 			{Name: "search_classifications", Help: "classifications matching filter; sort name|created_at|modified_at.", Kind: Search,
 				Op: "queries_classification_get_v2", Hydrate: "entities_classification_get_v2",
-				Brief: []string{"id", "name", "created_at", "modified_at", "created_by", "modified_by"}, Guide: "falcon://data-protection/classifications/fql-guide"},
+				Brief: []string{"id", "name", "created_at", "modified_at", "created_by", "modified_by"}, Guide: "falcon://data-security/classifications/fql-guide"},
 			{Name: "search_policies", Help: "policies matching filter; params platform_name (required: win|mac); sort e.g. precedence.asc.", Kind: Search,
 				Op: "queries_policy_get_v2", Hydrate: "entities_policy_get_v2", Params: []string{"platform_name"},
-				Brief: []string{"id", "name", "description", "platform_name", "precedence", "is_enabled", "is_default", "modified_at"}, Guide: "falcon://data-protection/policies/fql-guide"},
+				Brief: []string{"id", "name", "description", "platform_name", "precedence", "is_enabled", "is_default", "modified_at"}, Guide: "falcon://data-security/policies/fql-guide"},
 			{Name: "search_content_patterns", Help: "content patterns (regexes for sensitive data) matching filter; sort e.g. name.asc.", Kind: Search,
 				Op: "queries_content_pattern_get_v2", Hydrate: "entities_content_pattern_get",
-				Brief: []string{"id", "name", "type", "category", "region", "example", "deleted"}, Guide: "falcon://data-protection/content-patterns/fql-guide"},
+				Brief: []string{"id", "name", "type", "category", "region", "example", "deleted"}, Guide: "falcon://data-security/content-patterns/fql-guide"},
 		}},
 }

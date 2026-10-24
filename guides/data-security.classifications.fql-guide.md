@@ -1,4 +1,4 @@
-Falcon Query Language (FQL) - Search Data Protection Classifications Guide
+Falcon Query Language (FQL) - Search Data Security Classifications Guide
 
 === BASIC SYNTAX ===
 property_name:[operator]'value'
@@ -22,15 +22,15 @@ property_name:[operator]'value'
 • + = AND condition
 • , = OR condition
 
-=== falcon_search_data_protection_classifications FQL filter options ===
+=== falcon_search_data_security_entities (entity_type='classification') FQL filter options ===
 
 |Name|Type|Operators|Description|
 |-|-|-|-|
-|name|String|Yes|Classification name. Supports text match (~) for case-insensitive search. Ex: name:~'credit' Ex: name:'My Classification'|
+|name|String|Yes|Classification name. Only the ~ operator works on this field; exact match (without ~) is not supported for classifications. Ex: name:~'credit'|
 |created_at|Timestamp|Yes|Date the classification was created. Ex: created_at:>'2024-01-01' Ex: created_at:<'2025-06-01'|
 |modified_at|Timestamp|Yes|Date the classification was last modified. Ex: modified_at:>'2024-01-01'|
-|created_by|String|Yes|Email of the user who created the classification. Use ~ for partial match. Ex: created_by:~'admin'|
-|modified_by|String|Yes|Email of the user who last modified the classification. Ex: modified_by:~'admin'|
+|created_by|String|Yes|Email of the user who created the classification. Exact match returns nothing on this field; use ~ with the full address or its full local part. Partial words do not match. Ex: created_by:~'user@example.com'|
+|modified_by|String|Yes|Email of the user who last modified the classification. Exact match returns nothing on this field; use ~ with the full address or its full local part. Partial words do not match. Ex: modified_by:~'user@example.com'|
 
 === EXAMPLE USAGE ===
 
