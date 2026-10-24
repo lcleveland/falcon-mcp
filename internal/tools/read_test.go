@@ -382,3 +382,29 @@ func TestOffsetTokenPaging(t *testing.T) {
 		t.Errorf("short page has a cursor: %v", out)
 	}
 }
+
+// Discover logins page at most 100 ids and hydrate by query ids.
+func TestDiscoverLogins(t *testing.T) {
+	var got []request
+	cs := sessionWith(t, &config.Config{}, nil, http.StatusCreated, func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, request{Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery})
+		if strings.Contains(r.URL.Path, "/queries/") {
+			fmt.Fprint(w, `{"meta":{"pagination":{"total":1}},"resources":["l1"]}`)
+			return
+		}
+		fmt.Fprint(w, `{"resources":[{"id":"l1","username":"u","login_status":"Failed","user_sid":"S-1"}]}`)
+	})
+	out, isErr, text := callTool(t, cs, "falcon_discover", map[string]any{"action": "search_logins", "limit": 200, "filter": "login_status:'Failed'"})
+	if isErr || len(got) != 2 {
+		t.Fatalf("%s %+v", text, got)
+	}
+	if q := query(t, got[0].Query); got[0].Path != "/discover/queries/logins/v1" || q.Get("limit") != "100" {
+		t.Errorf("query = %+v", got[0])
+	}
+	if q := query(t, got[1].Query); got[1].Path != "/discover/entities/logins/v1" || q.Get("ids") != "l1" {
+		t.Errorf("hydrate = %+v", got[1])
+	}
+	if r := list(out["results"]); len(r) != 1 || r[0].(map[string]any)["user_sid"] != nil {
+		t.Errorf("results = %v", r)
+	}
+}

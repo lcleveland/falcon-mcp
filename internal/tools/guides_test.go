@@ -69,6 +69,7 @@ func TestGuideResourcesFollowVisibility(t *testing.T) {
 var noGuide = []string{
 	"falcon_case list_templates", "falcon_zta search", "falcon_cloud list_insight_definitions",
 	"falcon_cloud search_suppression_rules", "falcon_cloud search_groups",
+	"falcon_discover search_logins", "falcon_discover search_accounts",
 }
 
 func TestEveryFilterNamesAGuide(t *testing.T) {

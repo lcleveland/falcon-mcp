@@ -59,6 +59,10 @@ var extra = map[string]string{
 	"indicator_get_device_count_v1":         "IOC Management:read",
 	"indicator_get_devices_ran_on_v1":       "IOC Management:read",
 	"indicator_get_processes_ran_on_v1":     "IOC Management:read",
+	"query_logins":                          "Assets:read",
+	"get_logins":                            "Assets:read",
+	"query_accounts":                        "Assets:read",
+	"get_accounts":                          "Assets:read",
 	// Probe routes for read scopes upstream reaches only through POSTs,
 	// required filters or write scopes.
 	"query_hosts":          "Assets:read",

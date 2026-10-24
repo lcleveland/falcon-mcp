@@ -10,7 +10,7 @@ The server is read-only by default. Writes are turned on per **capability** (tri
 |---|---|
 | core (always on) | `falcon_status` (auth, cloud, rate-limit headroom, the startup probe, and `action=guide`), `falcon_api` (any Falcon operation, capability-gated) |
 | respond | `falcon_alert`, `falcon_case`, `falcon_rtr` (Real Time Response), `falcon_quarantine` |
-| hosts | `falcon_host`, `falcon_host_group`, `falcon_discover` (applications, managed and unmanaged assets), `falcon_zta` (Zero Trust Assessment), `falcon_sensor_usage` |
+| hosts | `falcon_host`, `falcon_host_group`, `falcon_discover` (applications, managed and unmanaged assets, logins, accounts), `falcon_zta` (Zero Trust Assessment), `falcon_sensor_usage` |
 | prevent | `falcon_policy` (by `policy_type`: prevention, sensor_update, firewall, device_control, response, content_update), `falcon_exclusion` (by `exclusion_type`: ioa, ml, sensor_visibility, certificate), `falcon_firewall`, `falcon_custom_ioa`, `falcon_ioc` |
 | intel | `falcon_intel` (actors, indicators, reports, MITRE reports), `falcon_recon` (Falcon Intelligence Recon) |
 | siem | `falcon_ngsiem` (CQL search), `falcon_correlation_rule`, `falcon_workflow` (Fusion SOAR), `falcon_report` (scheduled reports and searches) |
@@ -30,7 +30,7 @@ Every tool takes an `action`; each tool's description lists its actions and what
 | `falcon_quarantine` | search, get, preview_actions | release, unrelease (detection-remove); delete (destructive) |
 | `falcon_host` | search, get, search_hidden, get_online_state, get_login_history, get_network_history | add_tags, remove_tags (host-tags); contain, lift_containment (containment); suppress_detections, unsuppress_detections (detection-remove); hide_host, unhide_host (destructive) |
 | `falcon_host_group` | search, search_members | create, update, delete, add_hosts, remove_hosts (fleet-config) |
-| `falcon_discover` | search_applications, search_unmanaged_assets, search_managed_assets |  |
+| `falcon_discover` | search_applications, search_unmanaged_assets, search_managed_assets, search_logins, search_accounts |  |
 | `falcon_zta` | search, get, get_audit |  |
 | `falcon_sensor_usage` | search_weekly |  |
 | `falcon_policy` | search, get, search_members | create, update, delete, perform, set_precedence (fleet-config) |

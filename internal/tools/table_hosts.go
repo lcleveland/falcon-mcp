@@ -83,6 +83,13 @@ var hostsTools = []Tool{
 				Op: "combined_hosts", Paging: After, Filter: "entity_type:'managed'", Brief: assetBrief,
 				Set:   map[string][]string{"facet": {"system_insights"}},
 				Guide: "falcon://discover/managed-assets/fql-guide"},
+			// No upstream guide covers logins or accounts, so the help names the fields.
+			{Name: "search_logins", Help: "logins seen on hosts, one per account, host and day, matching filter on account_name, username, hostname, aid, login_type, login_status (Successful|Failed), login_timestamp, local_ip, remote_ip, admin_privileges (Yes|No), is_suspicious; e.g. username:'jdoe'+login_timestamp:>'2026-01-01'; sort login_timestamp|desc.", Kind: Search,
+				Op: "query_logins", Hydrate: "get_logins", MaxLimit: 100,
+				Brief: []string{"id", "account_name", "hostname", "aid", "login_type", "login_status", "login_timestamp", "remote_ip", "admin_privileges"}},
+			{Name: "search_accounts", Help: "user accounts seen on hosts, matching filter on account_name, username, account_type (Local|Domain), admin_privileges, login_domain, last_successful_login_hostname, last_successful_login_timestamp, last_failed_login_timestamp, password_last_set_timestamp; e.g. admin_privileges:'Yes'+account_type:'Local'; sort username|asc.", Kind: Search,
+				Op: "query_accounts", Hydrate: "get_accounts", MaxLimit: 100,
+				Brief: []string{"id", "account_name", "username", "account_type", "admin_privileges", "login_domain", "last_successful_login_timestamp", "last_successful_login_hostname", "last_failed_login_timestamp", "password_last_set_timestamp"}},
 		}},
 	{Name: "falcon_zta", Group: "hosts", Title: "Zero Trust Assessment",
 		Description: "Zero Trust Assessment scores (0-100) of hosts' sensor and OS hardening. Results name hosts by device id (aid).",
