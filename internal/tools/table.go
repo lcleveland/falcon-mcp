@@ -94,8 +94,9 @@ const (
 type Paging int
 
 const (
-	Offset Paging = iota // offset=<index>; meta.pagination.total
-	After                // after=<token>; meta.pagination.after (or next)
+	Offset      Paging = iota // offset=<index>; meta.pagination.total
+	After                     // after=<token>; meta.pagination.after (or next)
+	OffsetToken               // offset=<token>; meta.pagination.offset (IOC sightings)
 )
 
 // scope is the API scope an action needs: its first op's.

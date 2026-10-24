@@ -37,7 +37,7 @@ Every tool takes an `action`; each tool's description lists its actions and what
 | `falcon_exclusion` | search, get, get_certificate_details | create, update, delete (detection-remove) |
 | `falcon_firewall` | search_rules, search_rule_groups, search_policy_rules, get_rules, get_rule_groups | create_rule_group, update_rule_group, delete_rule_groups (fleet-config) |
 | `falcon_custom_ioa` | search_rule_groups, get_platforms, get_rule_types, get_rule_type | create_rule_group, create_rule, enable_rule_group, enable_rules (detection-add); disable_rule_group, disable_rules, delete_rule_groups, delete_rules (detection-remove) |
-| `falcon_ioc` | search, get | create, update (detection-add); create_allow, update_allow, delete (detection-remove) |
+| `falcon_ioc` | search, get, count_devices, search_devices, search_processes | create, update (detection-add); create_allow, update_allow, delete (detection-remove) |
 | `falcon_intel` | search_actors, search_indicators, search_reports, get_mitre_report |  |
 | `falcon_recon` | search_notifications, get_notifications, search_rules, get_rules, search_exposed_data_records, get_exposed_data_records, aggregate_notifications, aggregate_exposed_data_records, preview_rule |  |
 | `falcon_ngsiem` | search |  |

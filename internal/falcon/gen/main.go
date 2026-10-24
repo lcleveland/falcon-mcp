@@ -56,6 +56,9 @@ var extra = map[string]string{
 	"GetOnlineState_V1":                     "Hosts:read",
 	"QueryDeviceLoginHistoryV2":             "Hosts:read",
 	"QueryGetNetworkAddressHistoryV1":       "Hosts:read",
+	"indicator_get_device_count_v1":         "IOC Management:read",
+	"indicator_get_devices_ran_on_v1":       "IOC Management:read",
+	"indicator_get_processes_ran_on_v1":     "IOC Management:read",
 	// Probe routes for read scopes upstream reaches only through POSTs,
 	// required filters or write scopes.
 	"query_hosts":          "Assets:read",

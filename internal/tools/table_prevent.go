@@ -129,6 +129,12 @@ var preventTools = []Tool{
 			{Name: "search", Help: "IOCs matching filter, e.g. type:'sha256'+expired:false; sort e.g. modified_on.desc; params from_parent (true for MSSP-parent IOCs). Pages to 10,000 results.", Kind: Search,
 				Op: "indicator_search_v1", Hydrate: "indicator_get_v1", Params: []string{"from_parent"}, Brief: iocBrief, Guide: "falcon://ioc/search/fql-guide"},
 			{Name: "get", Help: "full IOCs by id (ids).", Kind: Get, Op: "indicator_get_v1"},
+			{Name: "count_devices", Help: "how many hosts an indicator was seen on; params type (sha256|md5|domain|ipv4|ipv6) and value. Needs no custom IOC: any indicator works.", Kind: Aggregate,
+				Op: "indicator_get_device_count_v1", NoFilter: true, Params: []string{"type", "value"}},
+			{Name: "search_devices", Help: "device ids of hosts an indicator was seen on (pass them to falcon_host get); params type and value.", Kind: Search,
+				Op: "indicator_get_devices_ran_on_v1", Paging: OffsetToken, NoFilter: true, Params: []string{"type", "value"}},
+			{Name: "search_processes", Help: "process ids (pid:<device id>:<process id>) that touched an indicator on one host; params type, value and device_id. Falcon answers 404 when there are none.", Kind: Search,
+				Op: "indicator_get_processes_ran_on_v1", Paging: OffsetToken, NoFilter: true, Params: []string{"type", "value", "device_id"}},
 			{Name: "create", Help: "create IOCs that detect or block; body is one indicator or a list: {type (sha256|md5|domain|ipv4|ipv6), value, action (detect|prevent|prevent_no_ui), severity, platforms, applied_globally or host_groups, expiration, description, tags}; " +
 				"params retrodetects, ignore_warnings. The reason is sent as the comment.",
 				Kind: Write, Capability: "detection-add", Op: "indicator_create_v1", Inputs: []string{"body"}, Params: iocParams, Send: iocCreate(iocBlock)},

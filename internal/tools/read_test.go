@@ -358,3 +358,27 @@ func TestToolTable(t *testing.T) {
 		}
 	}
 }
+
+// IOC sightings page by an opaque offset token, sent back as offset.
+func TestOffsetTokenPaging(t *testing.T) {
+	var got []string
+	cs := sessionWith(t, &config.Config{}, nil, http.StatusCreated, func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.URL.RawQuery)
+		fmt.Fprint(w, `{"meta":{"pagination":{"limit":2,"offset":"0:42","after":"/queries/x?offset=0:42"}},"resources":["d1","d2"]}`)
+	})
+	args := map[string]any{"action": "search_devices", "limit": 2, "params": map[string]any{"type": "domain", "value": "example.com"}}
+	out, isErr, text := callTool(t, cs, "falcon_ioc", args)
+	if isErr || out["next_cursor"] == nil || len(list(out["results"])) != 2 {
+		t.Fatalf("%s %v", text, out)
+	}
+	args["cursor"] = out["next_cursor"]
+	callTool(t, cs, "falcon_ioc", args)
+	if q := query(t, got[1]); q.Get("offset") != "0:42" || q.Get("value") != "example.com" {
+		t.Errorf("second page query = %s", got[1])
+	}
+	// A short page is the last.
+	args["limit"], args["cursor"] = 3, nil
+	if out, _, _ := callTool(t, cs, "falcon_ioc", args); out["next_cursor"] != nil {
+		t.Errorf("short page has a cursor: %v", out)
+	}
+}

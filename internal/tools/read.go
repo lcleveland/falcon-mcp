@@ -147,9 +147,10 @@ type envelope struct {
 	Meta struct {
 		TraceID    string `json:"trace_id"`
 		Pagination struct {
-			Total *int   `json:"total"`
-			After string `json:"after"`
-			Next  string `json:"next"`
+			Total  *int   `json:"total"`
+			After  string `json:"after"`
+			Next   string `json:"next"`
+			Offset any    `json:"offset"` // a string token under OffsetToken paging
 		} `json:"pagination"`
 	} `json:"meta"`
 	Resources any `json:"resources"`
@@ -260,7 +261,7 @@ func (d Deps) search(ctx context.Context, tool string, a Action, in Input) (map[
 		q.Set(a.Param, in.ID)
 	}
 	if pos != "" {
-		q.Set(map[Paging]string{Offset: "offset", After: "after"}[a.Paging], pos)
+		q.Set(map[Paging]string{Offset: "offset", After: "after", OffsetToken: "offset"}[a.Paging], pos)
 	}
 	for k, v := range a.Set {
 		q[k] = slices.Clone(v)
@@ -301,6 +302,10 @@ func (d Deps) search(ctx context.Context, tool string, a Action, in Input) (map[
 		}
 	case After:
 		next = cmp.Or(pg.After, pg.Next)
+	case OffsetToken:
+		if s, ok := pg.Offset.(string); ok && got == limit {
+			next = s
+		}
 	}
 	if got == 0 {
 		next = ""
