@@ -29,6 +29,25 @@ var apiWrites = map[string]string{
 	// confirm and the filter count.
 	"BatchActiveResponderCmd": never,
 	"UpdateQfByQuery":         never,
+	// Data Protection writes reach the table with upstream's scope map;
+	// none is exposed until someone asks for them and picks a capability.
+	"entities_classification_patch_v2":        never,
+	"entities_classification_post_v2":         never,
+	"entities_cloud_application_create":       never,
+	"entities_cloud_application_patch":        never,
+	"entities_content_pattern_create":         never,
+	"entities_content_pattern_patch":          never,
+	"entities_enterprise_account_create":      never,
+	"entities_enterprise_account_patch":       never,
+	"entities_local_application_create":       never,
+	"entities_local_application_group_create": never,
+	"entities_local_application_group_patch":  never,
+	"entities_local_application_patch":        never,
+	"entities_policy_patch_v2":                never,
+	"entities_policy_post_v2":                 never,
+	"entities_sensitivity_label_create_v2":    never,
+	"entities_web_location_create_v2":         never,
+	"entities_web_location_patch_v2":          never,
 
 	"CreateSuppressionRule":    "detection-remove",
 	"DeleteSuppressionRules":   "detection-add",
