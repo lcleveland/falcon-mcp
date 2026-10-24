@@ -347,7 +347,13 @@ func (d Deps) aggregate(ctx context.Context, a Action, in Input) (map[string]any
 		return text(t), nil
 	}
 	if l, ok := env.Resources.([]any); ok {
-		return shape(l, in.Fields, "", noteGet, env), nil
+		if in.Limit <= 0 || len(l) <= in.Limit {
+			return shape(l, in.Fields, "", noteGet, env), nil
+		}
+		// Unpaged: limit can only cut the one reply.
+		out := shape(l[:in.Limit], in.Fields, "", noteGet, env)
+		out["_truncation"] = map[string]any{"returned": in.Limit, "of": len(l), "note": "cut at limit; this action is not paged, so omit limit or narrow params for the rest"}
+		return out, nil
 	}
 	if m, ok := env.Resources.(map[string]any); ok && len(in.Fields) > 0 {
 		return capObject(times(project(m, in.Fields))), nil

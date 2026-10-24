@@ -408,3 +408,18 @@ func TestDiscoverLogins(t *testing.T) {
 		t.Errorf("results = %v", r)
 	}
 }
+
+func TestAggregateHonoursLimit(t *testing.T) {
+	cs := sessionWith(t, &config.Config{}, nil, http.StatusCreated, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"resources":[{"build":"3"},{"build":"2"},{"build":"1"}]}`))
+	})
+	out, _, text := callTool(t, cs, "falcon_sensor", map[string]any{"action": "list_builds", "limit": 2})
+	tr, _ := out["_truncation"].(map[string]any)
+	if res, _ := out["results"].([]any); len(res) != 2 || tr == nil || tr["of"] != 3.0 {
+		t.Fatalf("limit 2: %s", text)
+	}
+	out, _, text = callTool(t, cs, "falcon_sensor", map[string]any{"action": "list_builds"})
+	if res, _ := out["results"].([]any); len(res) != 3 || out["_truncation"] != nil {
+		t.Fatalf("no limit: %s", text)
+	}
+}
