@@ -609,8 +609,8 @@ func TestDetectionFleetWorkflowWrites(t *testing.T) {
 			"POST", "/workflows/entities/execute/v1", "definition_id=d1", `{"x":1}`},
 		{"falcon_report", map[string]any{"action": "launch", "id": "rp1"},
 			"POST", "/reports/entities/scheduled-reports/execution/v1", "", `[{"id":"rp1"}]`},
-		{"falcon_policy", map[string]any{"action": "update_classes", "policy_type": "device_control", "id": "p1", "body": map[string]any{"classes": []any{map[string]any{"id": "MASS_STORAGE", "action": "BLOCK_ALL"}}}},
-			"PATCH", "/policy/entities/device-control-classes/v1", "", `{"policies":[{"classes":[{"action":"BLOCK_ALL","id":"MASS_STORAGE"}],"id":"p1"}]}`},
+		{"falcon_policy", map[string]any{"action": "update_classes", "policy_type": "device_control", "id": "p1", "body": map[string]any{"usb_classes": map[string]any{"classes": []any{map[string]any{"class": "MASS_STORAGE", "action": "BLOCK_ALL"}}}}},
+			"PATCH", "/policy/entities/device-control-classes/v1", "", `{"policies":[{"id":"p1","usb_classes":{"classes":[{"action":"BLOCK_ALL","class":"MASS_STORAGE"}]}}]}`},
 	}
 	for _, p := range []struct{ typ, base, wrap string }{
 		{"prevention", "prevention", "resources"}, {"sensor_update", "sensor-update", "resources"}, {"firewall", "firewall", "resources"},
@@ -657,6 +657,8 @@ func TestDetectionFleetWorkflowWrites(t *testing.T) {
 		{"falcon_workflow", map[string]any{"action": "execute"}},
 		{"falcon_workflow", map[string]any{"action": "import", "body": map[string]any{"name": "w"}}},
 		{"falcon_policy", map[string]any{"action": "perform", "policy_type": "prevention", "id": "p1"}},
+		{"falcon_policy", map[string]any{"action": "update_classes", "policy_type": "device_control", "id": "p1", "body": map[string]any{"classes": []any{}}}},
+		{"falcon_policy", map[string]any{"action": "update_classes", "policy_type": "device_control", "id": "p1", "body": map[string]any{}}},
 		{"falcon_exclusion", map[string]any{"action": "update", "exclusion_type": "ml", "body": map[string]any{"value": "/y"}}},
 	} {
 		f.reset()

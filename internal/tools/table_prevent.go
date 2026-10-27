@@ -181,9 +181,10 @@ func policyWrites() []Action {
 	}
 	// The v2 device control PATCH silently drops class actions; they have their own route.
 	return append(as, Action{Name: "update_classes", Type: "device_control", Kind: Write, Capability: "fleet-config", Op: "patchDeviceControlPoliciesClassesV1",
-		Help: "set the USB class actions of device_control policy id (update ignores them); body is {classes: [{id, action, exceptions}]}, " +
-			"id e.g. ANY, AUDIO_VIDEO, IMAGING, MASS_STORAGE, MOBILE, PRINTER, WIRELESS, action FULL_ACCESS, BLOCK_ALL, BLOCK_EXECUTE, BLOCK_WRITE_EXECUTE. Read the policy first for the class ids it has.",
-		Inputs: []string{"id", "body"}, Send: policyEntity("policies", true)})
+		Help: "set the USB class actions of device_control policy id (update ignores them); body is {usb_classes: {classes: [{class, action}], upsert_exceptions, delete_exceptions}}, " +
+			"class e.g. ANY, AUDIO_VIDEO, IMAGING, MASS_STORAGE, MOBILE, PRINTER, WIRELESS, REMOVABLE_STORAGE_SDCARD, REMOVABLE_STORAGE_GENERIC, action FULL_ACCESS, BLOCK_ALL, BLOCK_EXECUTE, BLOCK_WRITE_EXECUTE. " +
+			"bluetooth_classes takes the same form. Read the policy back to confirm.",
+		Inputs: []string{"id", "body"}, Send: deviceControlClasses})
 }
 
 func exclusionWrites() []Action {
@@ -243,6 +244,24 @@ func uninstallOff(v any) bool {
 		return slices.ContainsFunc(v, uninstallOff)
 	}
 	return false
+}
+
+// deviceControlClasses refuses a body Falcon would accept and silently
+// ignore: the route reads only usb_classes and bluetooth_classes.
+func deviceControlClasses(w WriteCall) (falcon.Params, error) {
+	b, err := object(w.Body)
+	if err != nil {
+		return falcon.Params{}, err
+	}
+	for k := range b {
+		if k != "usb_classes" && k != "bluetooth_classes" {
+			return falcon.Params{}, fmt.Errorf("body key %q is not read by this route; use usb_classes and/or bluetooth_classes", k)
+		}
+	}
+	if len(b) == 0 {
+		return falcon.Params{}, errors.New("body needs usb_classes and/or bluetooth_classes")
+	}
+	return policyEntity("policies", true)(w)
 }
 
 func policyAction(w WriteCall) (falcon.Params, error) {
