@@ -831,10 +831,16 @@ func TestIdentityWrites(t *testing.T) {
 
 	f.reset()
 	f.replies = nil
-	call("falcon_identity", map[string]any{"action": "create_rule", "body": map[string]any{"name": "n", "simulationMode": true}, "reason": "r"})
+	// get_rules' shape, and a body without action, are refused unsent.
+	for _, b := range []map[string]any{{"name": "n", "ruleAction": map[string]any{"action": "BLOCK"}}, {"name": "n", "simulationMode": true}} {
+		if _, isErr, msg := call("falcon_identity", map[string]any{"action": "create_rule", "body": b, "reason": "r"}); !isErr || !strings.Contains(msg, "creation format") {
+			t.Errorf("%v: isErr %v, msg %q", b, isErr, msg)
+		}
+	}
+	call("falcon_identity", map[string]any{"action": "create_rule", "body": map[string]any{"name": "n", "action": "BLOCK", "simulationMode": true}, "reason": "r"})
 	call("falcon_identity", map[string]any{"action": "delete_rules", "ids": []string{"r1"}, "reason": "r"})
 	w = f.writes()
-	if len(w) != 2 || w[0].Method+" "+w[0].Path != "POST /identity-protection/entities/policy-rules/v1" || w[0].Body != `{"name":"n","simulationMode":true}` ||
+	if len(w) != 2 || w[0].Method+" "+w[0].Path != "POST /identity-protection/entities/policy-rules/v1" || w[0].Body != `{"action":"BLOCK","name":"n","simulationMode":true}` ||
 		w[1].Method+" "+w[1].Path != "DELETE /identity-protection/entities/policy-rules/v1" || w[1].Query != "ids=r1" {
 		t.Errorf("sent %+v", w)
 	}

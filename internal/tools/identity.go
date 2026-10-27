@@ -85,6 +85,32 @@ var identityMutations = map[string]map[string]mutation{
 	},
 }
 
+// idpRuleKeys is the rule creation format. get_rules returns another shape
+// (ruleAction, ruleConditions), which Falcon refuses with a misleading
+// "must be BLOCK", so the body is checked here first.
+var idpRuleKeys = []string{"name", "enabled", "simulationMode", "action", "trigger", "activity", "sourceUser", "sourceEndpoint", "destination"}
+
+const idpRuleFormat = "{name, enabled, simulationMode, action (e.g. BLOCK, MFA, ALLOW), trigger, activity: {accessType, accessTypeCustom}, " +
+	"sourceUser, sourceEndpoint, destination: each {entityId, groupMembership}, every leaf {include: [...], exclude: [...]}}; it has no notification fields"
+
+func idpRuleCreate(w WriteCall) (falcon.Params, error) {
+	b, err := object(w.Body)
+	if err != nil {
+		return falcon.Params{}, err
+	}
+	for k := range b {
+		if !slices.Contains(idpRuleKeys, k) {
+			return falcon.Params{}, fmt.Errorf("body key %q is not in the rule creation format, which differs from what get_rules returns; create_rule takes %s", k, idpRuleFormat)
+		}
+	}
+	for _, k := range []string{"name", "action"} {
+		if s, _ := b[k].(string); s == "" {
+			return falcon.Params{}, fmt.Errorf("body needs %s, a string, in the rule creation format %s", k, idpRuleFormat)
+		}
+	}
+	return entity("", false, false)(w)
+}
+
 // identityMutation sends one listed mutation, params mutation, with body
 // as its input. The document is built here, so no caller text reaches it
 // but the input, which goes as a variable.

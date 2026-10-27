@@ -21,9 +21,9 @@ var identityTools = []Tool{
 				Op: "get_policy_rules_query", Hydrate: "get_policy_rules", Params: []string{"enabled", "simulation_mode", "name"}, Brief: idpRuleBrief},
 			{Name: "get_rules", Help: "full Identity policy rules by id (ids): conditions, action, notifications.", Kind: Get, Op: "get_policy_rules"},
 			// Rules gate access (block, MFA, allow), like firewall rule groups.
-			{Name: "create_rule", Help: "create an Identity policy rule; body as get_rules returns one, without _id: {name, enabled, simulationMode, ruleConditions, ruleAction, emailNotification, indicatorNotification}. " +
-				"Falcon has no rule update: to change a rule (e.g. simulationMode false to enforce), get it, create the changed copy, then delete_rules the old one.",
-				Kind: Write, Capability: "fleet-config", Op: "post_policy_rules", Inputs: []string{"body"}, Brief: idpRuleBrief, Send: entity("", false, false)},
+			{Name: "create_rule", Help: "create an Identity policy rule; body is the creation format, which is not what get_rules returns: " + idpRuleFormat + ". " +
+				"Falcon has no rule update: to change a rule (e.g. simulationMode false to enforce), get it, create the changed copy in the creation format, then delete_rules the old one.",
+				Kind: Write, Capability: "fleet-config", Op: "post_policy_rules", Inputs: []string{"body"}, Brief: idpRuleBrief, Send: idpRuleCreate},
 			{Name: "delete_rules", Help: "delete Identity policy rules by id (ids).",
 				Kind: Write, Capability: "fleet-config", Op: "delete_policy_rules", Target: TargetIDs, MaxIDs: maxQueryIDs, Send: deleteIDs(false)},
 		}},
