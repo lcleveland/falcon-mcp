@@ -67,6 +67,7 @@ var extra = map[string]string{
 	"queryCombinedSensorUpdateKernels":      "Sensor Update Policies:read",
 	"GetCombinedSensorInstallersByQueryV2":  "Sensor Download:read",
 	"revealUninstallToken":                  "Sensor Update Policies:write",
+	"patchDeviceControlPoliciesClassesV1":   "Device Control Policies:write",
 	// Probe routes for read scopes upstream reaches only through POSTs,
 	// required filters or write scopes.
 	"query_hosts":          "Assets:read",

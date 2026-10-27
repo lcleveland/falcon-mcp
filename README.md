@@ -34,7 +34,7 @@ Every tool takes an `action`; each tool's description lists its actions and what
 | `falcon_zta` | search, get, get_audit |  |
 | `falcon_sensor` | list_builds, search_kernels, search_installers |  |
 | `falcon_sensor_usage` | search_weekly |  |
-| `falcon_policy` | search, get, search_members | create, update, delete, perform, set_precedence (fleet-config) |
+| `falcon_policy` | search, get, search_members | create, update, delete, perform, set_precedence, update_classes for device_control (fleet-config) |
 | `falcon_exclusion` | search, get, get_certificate_details | create, update, delete (detection-remove) |
 | `falcon_firewall` | search_rules, search_rule_groups, search_policy_rules, get_rules, get_rule_groups | create_rule_group, update_rule_group, delete_rule_groups (fleet-config) |
 | `falcon_custom_ioa` | search_rule_groups, get_platforms, get_rule_types, get_rule_type | create_rule_group, create_rule, enable_rule_group, enable_rules (detection-add); disable_rule_group, disable_rules, delete_rule_groups, delete_rules (detection-remove) |

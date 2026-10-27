@@ -179,7 +179,11 @@ func policyWrites() []Action {
 			with(w, Action{Name: "set_precedence", Help: precedenceHelp, Op: p.prec, Target: TargetIDs, Params: []string{"platform_name"}, Send: policyPrecedence}),
 		)
 	}
-	return as
+	// The v2 device control PATCH silently drops class actions; they have their own route.
+	return append(as, Action{Name: "update_classes", Type: "device_control", Kind: Write, Capability: "fleet-config", Op: "patchDeviceControlPoliciesClassesV1",
+		Help: "set the USB class actions of device_control policy id (update ignores them); body is {classes: [{id, action, exceptions}]}, " +
+			"id e.g. ANY, AUDIO_VIDEO, IMAGING, MASS_STORAGE, MOBILE, PRINTER, WIRELESS, action FULL_ACCESS, BLOCK_ALL, BLOCK_EXECUTE, BLOCK_WRITE_EXECUTE. Read the policy first for the class ids it has.",
+		Inputs: []string{"id", "body"}, Send: policyEntity("policies", true)})
 }
 
 func exclusionWrites() []Action {

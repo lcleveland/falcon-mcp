@@ -231,6 +231,7 @@ var ops = map[string]Op{
 	"indicator_get_v1":                           {"GET", "/iocs/entities/indicators/v1", "IOC Management:read", false},
 	"indicator_search_v1":                        {"GET", "/iocs/queries/indicators/v1", "IOC Management:read", false},
 	"indicator_update_v1":                        {"PATCH", "/iocs/entities/indicators/v1", "IOC Management:write", true},
+	"patchDeviceControlPoliciesClassesV1":        {"PATCH", "/policy/entities/device-control-classes/v1", "Device Control Policies:write", true},
 	"patchDeviceControlPoliciesV2":               {"PATCH", "/policy/entities/device-control/v2", "Device Control Policies:write", true},
 	"performContentUpdatePoliciesAction":         {"POST", "/policy/entities/content-update-actions/v1", "Content Update Policies:write", true},
 	"performDeviceControlPoliciesAction":         {"POST", "/policy/entities/device-control-actions/v1", "Device Control Policies:write", true},
