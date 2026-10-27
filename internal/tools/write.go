@@ -71,9 +71,15 @@ func (d Deps) write(ctx context.Context, tool string, a Action, in Input) (map[s
 	if in.Command != "" {
 		audit = append(audit, "command", in.Command)
 	}
+	if a.Op == graphqlOp {
+		audit = append(audit, "mutation", w.Values.Get("mutation"))
+	}
 	// Logged before sending too, so a write cut off mid-call still has a record.
 	d.Log.Info("falcon write sending", audit...)
-	env, err := d.call(ctx, a.Op, p)
+	env, err := d.callWrite(ctx, a.Op, p)
+	if err == nil && a.Op == graphqlOp {
+		err = graphqlErr(env)
+	}
 	if err != nil {
 		var ae *falcon.APIError
 		if errors.As(err, &ae) {
@@ -85,6 +91,9 @@ func (d Deps) write(ctx context.Context, tool string, a Action, in Input) (map[s
 	d.Log.Info("falcon write", append(audit, "trace_id", env.Meta.TraceID)...)
 	if in.Raw {
 		return rawReply(env), nil
+	}
+	if a.Op == graphqlOp {
+		return capObject(times(env.Data)), nil
 	}
 	res := env.Resources
 	if res == nil {

@@ -15,7 +15,7 @@ The server is read-only by default. Writes are turned on per **capability** (tri
 | intel | `falcon_intel` (actors, indicators, reports, MITRE reports), `falcon_recon` (Falcon Intelligence Recon) |
 | siem | `falcon_ngsiem` (CQL search), `falcon_correlation_rule`, `falcon_workflow` (Fusion SOAR), `falcon_report` (scheduled reports and searches) |
 | exposure | `falcon_vulnerability` (Spotlight and serverless), `falcon_cloud` (Cloud Security), `falcon_shield` (SaaS Security), `falcon_data_protection` |
-| identity | `falcon_identity` (Identity Protection GraphQL, queries only) |
+| identity | `falcon_identity` (Identity Protection GraphQL and policy rules) |
 | ai | `falcon_guardian` (AIDR: AI agents seen on hosts), `falcon_agentworks` (Charlotte AI AgentWorks) |
 
 Every tool takes an `action`; each tool's description lists its actions and what they take. A write action exists only while its capability is on:
@@ -49,7 +49,7 @@ Every tool takes an `action`; each tool's description lists its actions and what
 | `falcon_cloud` | search_cspm_assets, search_kubernetes_containers, count_kubernetes_containers, search_images_vulnerabilities, search_insights, get_asset_insights, list_insight_definitions, search_iom_findings, search_suppression_rules, search_risks, search_groups, get_groups |  |
 | `falcon_shield` | search_checks, get_check_affected_entities, get_posture_metrics, get_check_compliance, search_alerts, get_activity_monitor, search_users, search_devices, search_apps, get_app_users, search_data_shares, get_integrations, get_system_users, get_supported_saas, get_system_logs |  |
 | `falcon_data_protection` | search_classifications, search_policies, search_content_patterns |  |
-| `falcon_identity` | investigate_entity |  |
+| `falcon_identity` | investigate_entity, search_rules, get_rules | triage (triage); tune (detection-remove); create_rule, delete_rules (fleet-config) |
 | `falcon_guardian` | search_, get_ and aggregate_ actions over agents, sessions, tools, skills, OS users, MCP servers, installs, models, executions, tool and skill usage, prompts and detections, plus get_session_activity, get_process_tree, get_network_events, get_file_events, get_classified_file_access |  |
 | `falcon_agentworks` | search_agents, get_agents, search_agent_versions, get_agent_versions, search_spans, get_spans, get_invocation |  |
 
@@ -68,12 +68,12 @@ All are off by default. A disabled capability's actions are removed from the too
 
 | Flag | Unlocks |
 |---|---|
-| `--allow-triage` | `falcon_alert` update (status, assignee, comments, tags); `falcon_case` create, update, add evidence, add/remove tags |
+| `--allow-triage` | `falcon_alert` update (status, assignee, comments, tags); `falcon_case` create, update, add evidence, add/remove tags; `falcon_identity` triage (incident comments and state, watchlist, marks) |
 | `--allow-host-tags` | `falcon_host` add_tags, remove_tags |
 | `--allow-containment` | `falcon_host` contain, lift_containment |
 | `--allow-detection-add` | custom IOA rule and rule-group create and enable; IOC create and update; through `falcon_api`, correlation-rule create and Cloud Security suppression-rule delete |
-| `--allow-detection-remove` | exclusions of every type (create, update, delete); custom IOA disable and delete; allow-listing and deleting IOCs; quarantine release/unrelease; `falcon_host` suppress_detections, unsuppress_detections; through `falcon_api`, correlation-rule update/delete, suppression-rule create and SaaS Security check dismissal |
-| `--allow-fleet-config` | policies of every type (create, update, delete, perform, set_precedence); host groups (create, update, delete, add/remove hosts); firewall rule groups |
+| `--allow-detection-remove` | exclusions of every type (create, update, delete); custom IOA disable and delete; allow-listing and deleting IOCs; quarantine release/unrelease; `falcon_host` suppress_detections, unsuppress_detections; through `falcon_api`, correlation-rule update/delete, suppression-rule create and SaaS Security check dismissal; `falcon_identity` tune (entity classification, authorizers, associations, linked accounts, traffic-inspection exclusions) |
+| `--allow-fleet-config` | policies of every type (create, update, delete, perform, set_precedence); host groups (create, update, delete, add/remove hosts); firewall rule groups; `falcon_identity` create_rule, delete_rules |
 | `--allow-rtr-read` | `falcon_rtr` sessions, batch sessions, listing session files, and read-only commands on live hosts: `cat`, `cd`, `env`, `eventlog list`/`view`, `filehash`, `getsid`, `ipconfig`, `ls`, `mount`, `netstat`, `ps`, `pwd`, `reg query`, `users` (Mac and Linux) |
 | `--allow-rtr-respond` | `falcon_rtr` run_responder_command on one host: `cp`, `get`, `kill`, `memdump`, `mkdir`, `mv`, `put`, `reg` delete/load/set/unload, `rm`, `umount`, `xmemdump`, `zip` |
 | `--allow-destructive` | `falcon_host` hide_host, unhide_host; `falcon_quarantine` delete |

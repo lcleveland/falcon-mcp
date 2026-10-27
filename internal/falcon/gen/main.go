@@ -68,6 +68,10 @@ var extra = map[string]string{
 	"GetCombinedSensorInstallersByQueryV2":  "Sensor Download:read",
 	"revealUninstallToken":                  "Sensor Update Policies:write",
 	"patchDeviceControlPoliciesClassesV1":   "Device Control Policies:write",
+	"get_policy_rules":                      "Identity Protection Policy Rules:read",
+	"get_policy_rules_query":                "Identity Protection Policy Rules:read",
+	"post_policy_rules":                     "Identity Protection Policy Rules:write",
+	"delete_policy_rules":                   "Identity Protection Policy Rules:write",
 	// Probe routes for read scopes upstream reaches only through POSTs,
 	// required filters or write scopes.
 	"query_hosts":          "Assets:read",

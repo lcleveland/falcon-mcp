@@ -336,7 +336,8 @@ func TestToolTable(t *testing.T) {
 		seen[tl.Name] = true
 		for _, a := range tl.Actions {
 			op, ok := falcon.Lookup(a.Op)
-			if !ok || op.Write != (a.Kind == Write) || (a.Kind == Write) != (a.Capability != "" && a.Send != nil) {
+			// GraphQL serves reads and writes on one route; write sends mutations unretried.
+			if !ok || (op.Write != (a.Kind == Write) && a.Op != graphqlOp) || (a.Kind == Write) != (a.Capability != "" && a.Send != nil) {
 				t.Errorf("%s.%s: op %s missing, or its write bit, capability or Send disagrees with the kind", tl.Name, a.Name, a.Op)
 			}
 			if a.Capability != "" && !slices.Contains(config.Capabilities, a.Capability) {

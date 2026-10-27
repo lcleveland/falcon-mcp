@@ -387,6 +387,8 @@ func TestCapabilityMap(t *testing.T) {
 		"falcon_host_group add_hosts": "fleet-config", "falcon_host_group remove_hosts": "fleet-config",
 		"falcon_firewall create_rule_group": "fleet-config", "falcon_firewall update_rule_group": "fleet-config",
 		"falcon_firewall delete_rule_groups": "fleet-config", "falcon_policy update_classes device_control": "fleet-config",
+		"falcon_identity create_rule": "fleet-config", "falcon_identity delete_rules": "fleet-config",
+		"falcon_identity triage": "triage", "falcon_identity tune": "detection-remove",
 
 		"falcon_host hide_host": "destructive", "falcon_host unhide_host": "destructive", "falcon_quarantine delete": "destructive",
 		"falcon_host reveal_uninstall_token": "uninstall-token",
@@ -771,5 +773,65 @@ func TestRevealUninstallToken(t *testing.T) {
 	call, _ = writeSession(t, []string{"destructive"}, 0, f)
 	if _, isErr, _ := call("falcon_host", map[string]any{"action": "reveal_uninstall_token", "id": "aid-1", "confirm": "WS-0001", "reason": "r"}); !isErr {
 		t.Error("revealed without uninstall-token")
+	}
+}
+
+func TestIdentityWrites(t *testing.T) {
+	f := &fakeWrites{}
+	call, logs := writeSession(t, []string{"triage", "detection-remove", "fleet-config"}, 0, f)
+
+	f.replies = map[string]reply{"POST /identity-protection/combined/graphql/v1": {200, `{"data":{"markEntities":{"updatedEntities":[{"entityId":"e1","watched":false}],"failures":[]}}}`}}
+	out, isErr, msg := call("falcon_identity", map[string]any{"action": "triage", "params": map[string]any{"mutation": "markEntities"},
+		"body": map[string]any{"entityQuery": map[string]any{"samAccountNames": []string{"jdoe"}}}, "reason": "r"})
+	if isErr {
+		t.Fatal(msg)
+	}
+	w := f.writes()
+	want := `{"query":"mutation($input: BulkEntityActionInput!) { markEntities(input: $input) { ` + bulkResult + ` } }","variables":{"input":{"entityQuery":{"samAccountNames":["jdoe"]}}}}`
+	if len(w) != 1 || w[0].Body != want {
+		t.Errorf("sent %+v, want body %s", w, want)
+	}
+	if b, _ := json.Marshal(out); !strings.Contains(string(b), `"entityId":"e1"`) {
+		t.Errorf("out = %s", b)
+	}
+	if !strings.Contains(logs.String(), `"mutation":"markEntities"`) {
+		t.Errorf("mutation not audited: %s", logs)
+	}
+
+	// A listed mutation under the other action, and an unlisted one, are refused unsent.
+	f.reset()
+	for _, m := range []string{"classifyUserEntities", "deleteEverything"} {
+		if _, isErr, _ := call("falcon_identity", map[string]any{"action": "triage", "params": map[string]any{"mutation": m}, "body": map[string]any{"x": 1}, "reason": "r"}); !isErr {
+			t.Errorf("%s: not refused", m)
+		}
+	}
+	if len(f.writes()) != 0 {
+		t.Errorf("sent %+v", f.writes())
+	}
+
+	// GraphQL fails with a 200: the write fails, and is sent once.
+	f.replies = map[string]reply{"POST /identity-protection/combined/graphql/v1": {200, `{"data":null,"errors":[{"message":"bad input"}]}`}}
+	if _, isErr, msg := call("falcon_identity", map[string]any{"action": "tune", "params": map[string]any{"mutation": "classifyUserEntities"}, "body": map[string]any{"x": 1}, "reason": "r"}); !isErr || !strings.Contains(msg, "bad input") {
+		t.Errorf("isErr %v, msg %q", isErr, msg)
+	}
+	if !strings.Contains(logs.String(), `"msg":"falcon write failed"`) {
+		t.Errorf("failure not logged: %s", logs)
+	}
+
+	f.reset()
+	f.replies = map[string]reply{"POST /identity-protection/combined/graphql/v1": {502, `{}`}}
+	call("falcon_identity", map[string]any{"action": "triage", "params": map[string]any{"mutation": "unmarkEntities"}, "body": map[string]any{"x": 1}, "reason": "r"})
+	if n := len(f.writes()); n != 1 {
+		t.Errorf("mutation sent %d times on a 502", n)
+	}
+
+	f.reset()
+	f.replies = nil
+	call("falcon_identity", map[string]any{"action": "create_rule", "body": map[string]any{"name": "n", "simulationMode": true}, "reason": "r"})
+	call("falcon_identity", map[string]any{"action": "delete_rules", "ids": []string{"r1"}, "reason": "r"})
+	w = f.writes()
+	if len(w) != 2 || w[0].Method+" "+w[0].Path != "POST /identity-protection/entities/policy-rules/v1" || w[0].Body != `{"name":"n","simulationMode":true}` ||
+		w[1].Method+" "+w[1].Path != "DELETE /identity-protection/entities/policy-rules/v1" || w[1].Query != "ids=r1" {
+		t.Errorf("sent %+v", w)
 	}
 }

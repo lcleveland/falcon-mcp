@@ -50,6 +50,7 @@ var probes = map[string]struct{ op, query string }{
 	"IOA Exclusions:read":                               {"ss_ioa_exclusions_search_v2", "limit=1"},
 	"IOC Management:read":                               {"indicator_search_v1", "limit=1"},
 	"Identity Protection Entities:read":                 {"QuerySensorsByFilter", "limit=1"},
+	"Identity Protection Policy Rules:read":             {"get_policy_rules_query", ""},
 	"Indicators (Falcon Intelligence):read":             {"QueryIntelIndicatorEntities", "limit=1"},
 	"Machine Learning Exclusions:read":                  {"exclusions_search_v2", "limit=1"},
 	"Monitoring rules (Falcon Intelligence Recon):read": {"QueryRulesV1", "limit=1"},

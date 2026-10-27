@@ -162,7 +162,8 @@ type envelope struct {
 	Errors []struct {
 		Message string `json:"message"`
 	} `json:"errors"`
-	raw json.RawMessage // the reply as sent, for raw=true
+	Data any             `json:"data"` // GraphQL, whose errors share Falcon's shape
+	raw  json.RawMessage // the reply as sent, for raw=true
 }
 
 func (d Deps) call(ctx context.Context, op string, p falcon.Params) (*envelope, error) {
@@ -170,6 +171,25 @@ func (d Deps) call(ctx context.Context, op string, p falcon.Params) (*envelope, 
 	if err != nil {
 		return nil, err
 	}
+	return decode(op, raw)
+}
+
+// callWrite is call for a write action: never retried, even on a route
+// that also serves reads (GraphQL).
+func (d Deps) callWrite(ctx context.Context, id string, p falcon.Params) (*envelope, error) {
+	op, ok := falcon.Lookup(id)
+	if !ok {
+		return nil, fmt.Errorf("unknown Falcon operation %q", id)
+	}
+	op.Write = true
+	raw, err := d.Client.DoOp(ctx, id, op, p)
+	if err != nil {
+		return nil, err
+	}
+	return decode(id, raw)
+}
+
+func decode(op string, raw json.RawMessage) (*envelope, error) {
 	env := envelope{raw: raw}
 	if len(raw) > 0 && json.Unmarshal(raw, &env) != nil {
 		// Some routes serve a file: a bare JSON array, or text such as CSV.
