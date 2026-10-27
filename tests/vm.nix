@@ -180,7 +180,8 @@ let
     # action is visible, so every other typed tool must stay read-only.
     # falcon_api is writable with any capability on and names the enabled ones.
     writable = sorted(n for n, t in tools.items() if not t.get("annotations", {}).get("readOnlyHint"))
-    assert writable == ["falcon_alert", "falcon_api", "falcon_case"], f"writable tools: {writable}"
+    assert writable == ["falcon_alert", "falcon_api", "falcon_case", "falcon_identity"], f"writable tools: {writable}"
+    assert "triage" in actions["falcon_identity"] and "tune" not in actions["falcon_identity"], actions["falcon_identity"]
     assert "capability is enabled (triage)" in tools["falcon_api"]["description"], tools["falcon_api"]["description"]
     assert "update" in actions["falcon_alert"], actions["falcon_alert"]
     assert "contain" not in actions["falcon_host"], actions["falcon_host"]

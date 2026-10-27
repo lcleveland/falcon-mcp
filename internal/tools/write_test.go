@@ -832,10 +832,23 @@ func TestIdentityWrites(t *testing.T) {
 	f.reset()
 	f.replies = nil
 	// get_rules' shape, and a body without action, are refused unsent.
-	for _, b := range []map[string]any{{"name": "n", "ruleAction": map[string]any{"action": "BLOCK"}}, {"name": "n", "simulationMode": true}} {
-		if _, isErr, msg := call("falcon_identity", map[string]any{"action": "create_rule", "body": b, "reason": "r"}); !isErr || !strings.Contains(msg, "creation format") {
-			t.Errorf("%v: isErr %v, msg %q", b, isErr, msg)
+	// So are conditions the API drops silently, and an enforced block on everyone.
+	for _, c := range []struct {
+		body map[string]any
+		want string
+	}{
+		{map[string]any{"name": "n", "ruleAction": map[string]any{"action": "BLOCK"}}, "creation format"},
+		{map[string]any{"name": "n", "simulationMode": true}, "creation format"},
+		{map[string]any{"name": "n", "action": "BLOCK", "simulationMode": true, "sourceUser": map[string]any{"accountType": map[string]any{"include": []any{"PROGRAMMATIC"}}}}, "drop it silently"},
+		{map[string]any{"name": "n", "action": "BLOCK", "simulationMode": true, "sourceUser": map[string]any{"entityId": map[string]any{"options": map[string]any{}}}}, "only include and exclude"},
+		{map[string]any{"name": "n", "action": "BLOCK", "simulationMode": false, "activity": map[string]any{"accessType": map[string]any{"include": []any{"REMOTE_DESKTOP"}}}}, "applies to everyone"},
+	} {
+		if _, isErr, msg := call("falcon_identity", map[string]any{"action": "create_rule", "body": c.body, "reason": "r"}); !isErr || !strings.Contains(msg, c.want) {
+			t.Errorf("%v: isErr %v, msg %q", c.body, isErr, msg)
 		}
+	}
+	if w := f.writes(); len(w) != 0 {
+		t.Errorf("sent %+v", w)
 	}
 	call("falcon_identity", map[string]any{"action": "create_rule", "body": map[string]any{"name": "n", "action": "BLOCK", "simulationMode": true}, "reason": "r"})
 	call("falcon_identity", map[string]any{"action": "delete_rules", "ids": []string{"r1"}, "reason": "r"})

@@ -87,26 +87,69 @@ var identityMutations = map[string]map[string]mutation{
 
 // idpRuleKeys is the rule creation format. get_rules returns another shape
 // (ruleAction, ruleConditions), which Falcon refuses with a misleading
-// "must be BLOCK", so the body is checked here first.
+// "must be BLOCK"; and Falcon accepts any other condition (sourceUser
+// accountType, say) and drops it silently, which can leave a rule matching
+// everyone. So the body is checked here first.
 var idpRuleKeys = []string{"name", "enabled", "simulationMode", "action", "trigger", "activity", "sourceUser", "sourceEndpoint", "destination"}
 
-const idpRuleFormat = "{name, enabled, simulationMode, action (e.g. BLOCK, MFA, ALLOW), trigger, activity: {accessType, accessTypeCustom}, " +
-	"sourceUser, sourceEndpoint, destination: each {entityId, groupMembership}, every leaf {include: [...], exclude: [...]}}; it has no notification fields"
+// idpRuleConditions are the conditions each creation-format key takes;
+// every condition is {include: [...], exclude: [...]}.
+var idpRuleConditions = map[string][]string{
+	"activity":       {"accessType", "accessTypeCustom"},
+	"sourceUser":     {"entityId", "groupMembership"},
+	"sourceEndpoint": {"entityId", "groupMembership"},
+	"destination":    {"entityId", "groupMembership"},
+}
+
+const idpRuleFormat = "{name, enabled, simulationMode, action (e.g. BLOCK, MFA, ALLOW), trigger (e.g. access), activity: {accessType, accessTypeCustom}, " +
+	"sourceUser, sourceEndpoint, destination: each {entityId, groupMembership}, every condition {include: [...], exclude: [...]}}; " +
+	"it has no notification fields, and no account-type or other condition: those exist only in the console"
 
 func idpRuleCreate(w WriteCall) (falcon.Params, error) {
 	b, err := object(w.Body)
 	if err != nil {
 		return falcon.Params{}, err
 	}
-	for k := range b {
+	for k, v := range b {
 		if !slices.Contains(idpRuleKeys, k) {
 			return falcon.Params{}, fmt.Errorf("body key %q is not in the rule creation format, which differs from what get_rules returns; create_rule takes %s", k, idpRuleFormat)
+		}
+		conds, ok := idpRuleConditions[k]
+		if !ok {
+			continue
+		}
+		m, ok := v.(map[string]any)
+		if !ok {
+			return falcon.Params{}, fmt.Errorf("body %s must be an object; create_rule takes %s", k, idpRuleFormat)
+		}
+		for c, cv := range m {
+			if !slices.Contains(conds, c) {
+				return falcon.Params{}, fmt.Errorf("%s.%s is not a condition the API can create (Falcon would drop it silently); %s takes only %s", k, c, k, strings.Join(conds, ", "))
+			}
+			leaf, ok := cv.(map[string]any)
+			if !ok {
+				return falcon.Params{}, fmt.Errorf("%s.%s must be {include: [...], exclude: [...]}", k, c)
+			}
+			for l := range leaf {
+				if l != "include" && l != "exclude" {
+					return falcon.Params{}, fmt.Errorf("%s.%s.%s: a condition takes only include and exclude", k, c, l)
+				}
+			}
 		}
 	}
 	for _, k := range []string{"name", "action"} {
 		if s, _ := b[k].(string); s == "" {
 			return falcon.Params{}, fmt.Errorf("body needs %s, a string, in the rule creation format %s", k, idpRuleFormat)
 		}
+	}
+	// An enforced rule that names no user, endpoint or destination acts on
+	// every authentication its trigger and activity match.
+	sim, _ := b["simulationMode"].(bool)
+	if a := b["action"]; !sim && a != "ALLOW" && a != "ADD_TO_WATCH_LIST" && !slices.ContainsFunc([]string{"sourceUser", "sourceEndpoint", "destination"}, func(k string) bool {
+		m, _ := b[k].(map[string]any)
+		return len(m) > 0
+	}) {
+		return falcon.Params{}, fmt.Errorf("an enforced %v rule needs a sourceUser, sourceEndpoint or destination condition, or it applies to everyone; set simulationMode true to try it first", a)
 	}
 	return entity("", false, false)(w)
 }
