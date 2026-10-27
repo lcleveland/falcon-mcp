@@ -154,8 +154,8 @@ var preventTools = []Tool{
 
 func policyWrites() []Action {
 	const (
-		createHelp  = "create a policy of policy_type; body is the policy {name, platform_name, description, settings, ...} as the Falcon API takes it. New policies start disabled with no host groups."
-		updateHelp  = "update policy id of policy_type; body is the fields to set, e.g. {name, description, settings}. Applies to every host in its groups at check-in. Uninstall protection can never be turned off here."
+		createHelp  = "create a policy of policy_type; body is the policy {name, platform_name, description, settings, ...} as the Falcon API takes it (device_control: usb_settings, bluetooth_settings, not settings). New policies start disabled with no host groups."
+		updateHelp  = "update policy id of policy_type; body is the fields to set, e.g. {name, description, settings} (device_control: usb_settings, bluetooth_settings). Applies to every host in its groups at check-in. Uninstall protection can never be turned off here."
 		deleteHelp  = "delete policies of policy_type by id (ids); their hosts fall back to the next policy by precedence."
 		performHelp = "act on policy id of policy_type; params action_name: enable, disable, add-host-group, remove-host-group (prevention and firewall also add-rule-group, remove-rule-group; " +
 			"content_update also set-pinned-content-version, remove-pinned-content-version, override-allow, override-pause, override-revert); body is the action parameters, e.g. [{name: group_id, value: <host group id>}]."
@@ -171,9 +171,14 @@ func policyWrites() []Action {
 		{"content_update", "createContentUpdatePolicies", "updateContentUpdatePolicies", "deleteContentUpdatePolicies", "performContentUpdatePoliciesAction", "setContentUpdatePoliciesPrecedence", "resources"},
 	} {
 		w := Action{Type: p.typ, Kind: Write, Capability: "fleet-config"}
+		create, update := policyEntity(p.key, false), policyEntity(p.key, true)
+		if p.typ == "device_control" {
+			create = onlyKeys(create, "name", "description", "platform_name", "clone_id", "usb_settings", "bluetooth_settings")
+			update = onlyKeys(update, "id", "name", "description", "platform_name", "usb_settings", "bluetooth_settings")
+		}
 		as = append(as,
-			with(w, Action{Name: "create", Help: createHelp, Op: p.create, Inputs: []string{"body"}, Send: policyEntity(p.key, false)}),
-			with(w, Action{Name: "update", Help: updateHelp, Op: p.update, Inputs: []string{"id", "body"}, Send: policyEntity(p.key, true)}),
+			with(w, Action{Name: "create", Help: createHelp, Op: p.create, Inputs: []string{"body"}, Send: create}),
+			with(w, Action{Name: "update", Help: updateHelp, Op: p.update, Inputs: []string{"id", "body"}, Send: update}),
 			with(w, Action{Name: "delete", Help: deleteHelp, Op: p.del, Target: TargetIDs, MaxIDs: maxQueryIDs, Send: deleteIDs(false)}),
 			with(w, Action{Name: "perform", Help: performHelp, Op: p.perform, Inputs: []string{"id", "body"}, Params: []string{"action_name"}, Send: policyAction}),
 			with(w, Action{Name: "set_precedence", Help: precedenceHelp, Op: p.prec, Target: TargetIDs, Params: []string{"platform_name"}, Send: policyPrecedence}),
@@ -184,7 +189,7 @@ func policyWrites() []Action {
 		Help: "set the USB class actions of device_control policy id (update ignores them); body is {usb_classes: {classes: [{class, action}], upsert_exceptions, delete_exceptions}}, " +
 			"class e.g. ANY, AUDIO_VIDEO, IMAGING, MASS_STORAGE, MOBILE, PRINTER, WIRELESS, REMOVABLE_STORAGE_SDCARD, REMOVABLE_STORAGE_GENERIC, action FULL_ACCESS, BLOCK_ALL, BLOCK_EXECUTE, BLOCK_WRITE_EXECUTE. " +
 			"bluetooth_classes takes the same form. Read the policy back to confirm.",
-		Inputs: []string{"id", "body"}, Send: deviceControlClasses})
+		Inputs: []string{"id", "body"}, Send: onlyKeys(policyEntity("policies", true), "usb_classes", "bluetooth_classes")})
 }
 
 func exclusionWrites() []Action {
@@ -246,22 +251,22 @@ func uninstallOff(v any) bool {
 	return false
 }
 
-// deviceControlClasses refuses a body Falcon would accept and silently
-// ignore: the route reads only usb_classes and bluetooth_classes.
-func deviceControlClasses(w WriteCall) (falcon.Params, error) {
-	b, err := object(w.Body)
-	if err != nil {
-		return falcon.Params{}, err
-	}
-	for k := range b {
-		if k != "usb_classes" && k != "bluetooth_classes" {
-			return falcon.Params{}, fmt.Errorf("body key %q is not read by this route; use usb_classes and/or bluetooth_classes", k)
+// onlyKeys refuses a body with a top-level key outside keys: Falcon would
+// accept it and silently ignore it (device control's v2 routes drop
+// settings and classes).
+func onlyKeys(send sender, keys ...string) sender {
+	return func(w WriteCall) (falcon.Params, error) {
+		b, err := object(w.Body)
+		if err != nil {
+			return falcon.Params{}, err
 		}
+		for k := range b {
+			if !slices.Contains(keys, k) {
+				return falcon.Params{}, fmt.Errorf("body key %q is not read by this route, which takes only %s", k, strings.Join(keys, ", "))
+			}
+		}
+		return send(w)
 	}
-	if len(b) == 0 {
-		return falcon.Params{}, errors.New("body needs usb_classes and/or bluetooth_classes")
-	}
-	return policyEntity("policies", true)(w)
 }
 
 func policyAction(w WriteCall) (falcon.Params, error) {
