@@ -9,9 +9,11 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/lcleveland/falcon-mcp/internal/config"
 	"github.com/lcleveland/falcon-mcp/internal/falcon"
@@ -856,5 +858,97 @@ func TestIdentityWrites(t *testing.T) {
 	if len(w) != 2 || w[0].Method+" "+w[0].Path != "POST /identity-protection/entities/policy-rules/v1" || w[0].Body != `{"action":"BLOCK","name":"n","simulationMode":true}` ||
 		w[1].Method+" "+w[1].Path != "DELETE /identity-protection/entities/policy-rules/v1" || w[1].Query != "ids=r1" {
 		t.Errorf("sent %+v", w)
+	}
+}
+
+// alertStore fakes the alerts query and patch: the query lists alerts
+// still open (when drain) or all of them, the patch closes them.
+type alertStore struct {
+	mu      sync.Mutex
+	open    []string
+	closed  map[string]int // times each was patched
+	drain   bool
+	batches []int
+}
+
+func (s *alertStore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch r.Method + " " + r.URL.Path {
+	case "GET /alerts/queries/alerts/v2":
+		var ids []string
+		for _, id := range s.open {
+			if !s.drain || s.closed[id] == 0 {
+				ids = append(ids, id)
+			}
+		}
+		total := len(ids)
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		ids = ids[:min(limit, len(ids))]
+		b, _ := json.Marshal(map[string]any{"meta": map[string]any{"pagination": map[string]any{"total": total}}, "resources": ids})
+		w.Write(b)
+	case "PATCH /alerts/entities/alerts/v3":
+		var body struct {
+			IDs []string `json:"composite_ids"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		for _, id := range body.IDs {
+			s.closed[id]++
+		}
+		s.batches = append(s.batches, len(body.IDs))
+		io.WriteString(w, `{"meta":{"trace_id":"t"},"resources":[]}`)
+	default:
+		w.WriteHeader(http.StatusNotFound)
+	}
+}
+
+func TestBatchedFilterWrite(t *testing.T) {
+	defer func(l time.Duration) { jobLag = l }(jobLag)
+	jobLag = time.Millisecond
+	run := func(n int, drain bool, confirm string) (*alertStore, map[string]any, bool, string) {
+		s := &alertStore{closed: map[string]int{}, drain: drain}
+		for i := range n {
+			s.open = append(s.open, fmt.Sprintf("a:%d", i))
+		}
+		cfg := &config.Config{Allow: map[string]bool{"triage": true}, MaxBulk: 10, MaxJob: 100}
+		cs := sessionLog(t, cfg, nil, http.StatusCreated, s.ServeHTTP, slog.New(slog.DiscardHandler))
+		out, isErr, msg := callTool(t, cs, "falcon_alert", map[string]any{"action": "update", "filter": "status:'new'", "confirm": confirm,
+			"params": map[string]any{"update_status": "closed"}, "reason": "r"})
+		return s, out, isErr, msg
+	}
+
+	// Unconfirmed, or over --max-job: nothing is sent.
+	for _, c := range []struct {
+		n       int
+		confirm string
+		want    string
+	}{{25, "", "confirm=\"25\""}, {101, "101", "--max-job"}} {
+		s, _, isErr, msg := run(c.n, true, c.confirm)
+		if !isErr || !strings.Contains(msg, c.want) || len(s.batches) != 0 {
+			t.Errorf("%d: isErr %v, msg %q, batches %v", c.n, isErr, msg, s.batches)
+		}
+	}
+
+	// A draining filter runs in batches of --max-bulk, each record once.
+	s, out, isErr, msg := run(25, true, "25")
+	if isErr || !slices.Equal(s.batches, []int{10, 10, 5}) || out["updated"] != float64(25) || out["remaining"] != float64(0) {
+		t.Errorf("isErr %v %s, batches %v, out %v", isErr, msg, s.batches, out)
+	}
+	for id, n := range s.closed {
+		if n != 1 {
+			t.Errorf("%s patched %d times", id, n)
+		}
+	}
+
+	// A filter the write leaves matching stops once its window is spent,
+	// without resending anything.
+	s, _, isErr, msg = run(60, false, "60")
+	if !isErr || !strings.Contains(msg, "already sent") || !slices.Equal(s.batches, []int{10, 10, 10, 10, 10}) {
+		t.Errorf("isErr %v, msg %q, batches %v", isErr, msg, s.batches)
+	}
+	for id, n := range s.closed {
+		if n != 1 {
+			t.Errorf("%s patched %d times", id, n)
+		}
 	}
 }

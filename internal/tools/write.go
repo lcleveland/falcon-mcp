@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lcleveland/falcon-mcp/internal/falcon"
 )
@@ -52,43 +53,23 @@ func (d Deps) write(ctx context.Context, tool string, a Action, in Input) (map[s
 	if err := params(a, in, w.Values); err != nil {
 		return nil, err
 	}
+	if a.Target == TargetIDs && in.Filter != "" && a.Resolve != "" && len(in.IDs) == 0 && d.Config.MaxJob > d.bulkCap(a) {
+		n, err := d.count(ctx, a.Resolve, in.Filter)
+		if err != nil {
+			return nil, err
+		}
+		if n > d.bulkCap(a) {
+			return d.job(ctx, tool, a, w, n)
+		}
+	}
 	var err error
 	if w.Targets, err = d.targets(ctx, a, in); err != nil {
 		return nil, err
 	}
-	p, err := a.Send(w)
+	env, err := d.send(ctx, tool, a, w)
 	if err != nil {
 		return nil, err
 	}
-
-	audit := []any{"tool", tool, "action", a.Name, "capability", a.Capability, "reason", w.Reason}
-	if in.ID != "" {
-		audit = append(audit, "id", in.ID)
-	}
-	if len(w.Targets) > 0 {
-		audit = append(audit, "ids", w.Targets)
-	}
-	if in.Command != "" {
-		audit = append(audit, "command", in.Command)
-	}
-	if a.Op == graphqlOp {
-		audit = append(audit, "mutation", w.Values.Get("mutation"))
-	}
-	// Logged before sending too, so a write cut off mid-call still has a record.
-	d.Log.Info("falcon write sending", audit...)
-	env, err := d.callWrite(ctx, a.Op, p)
-	if err == nil && a.Op == graphqlOp {
-		err = graphqlErr(env)
-	}
-	if err != nil {
-		var ae *falcon.APIError
-		if errors.As(err, &ae) {
-			audit = append(audit, "status", ae.Status, "trace_id", ae.TraceID)
-		}
-		d.Log.Warn("falcon write failed", append(audit, "error", err.Error())...)
-		return nil, err
-	}
-	d.Log.Info("falcon write", append(audit, "trace_id", env.Meta.TraceID)...)
 	if in.Raw {
 		return rawReply(env), nil
 	}
@@ -122,6 +103,148 @@ func (d Deps) write(ctx context.Context, tool string, a Action, in Input) (map[s
 		out["trace_id"] = env.Meta.TraceID
 	}
 	return out, nil
+}
+
+// send builds and sends one write call, logging it before and after.
+func (d Deps) send(ctx context.Context, tool string, a Action, w WriteCall) (*envelope, error) {
+	p, err := a.Send(w)
+	if err != nil {
+		return nil, err
+	}
+	audit := []any{"tool", tool, "action", a.Name, "capability", a.Capability, "reason", w.Reason}
+	if w.ID != "" {
+		audit = append(audit, "id", w.ID)
+	}
+	if len(w.Targets) > 0 {
+		audit = append(audit, "ids", w.Targets)
+	}
+	if w.Command != "" {
+		audit = append(audit, "command", w.Command)
+	}
+	if a.Op == graphqlOp {
+		audit = append(audit, "mutation", w.Values.Get("mutation"))
+	}
+	// Logged before sending too, so a write cut off mid-call still has a record.
+	d.Log.Info("falcon write sending", audit...)
+	env, err := d.callWrite(ctx, a.Op, p)
+	if err == nil && a.Op == graphqlOp {
+		err = graphqlErr(env)
+	}
+	if err != nil {
+		var ae *falcon.APIError
+		if errors.As(err, &ae) {
+			audit = append(audit, "status", ae.Status, "trace_id", ae.TraceID)
+		}
+		d.Log.Warn("falcon write failed", append(audit, "error", err.Error())...)
+		return nil, err
+	}
+	d.Log.Info("falcon write", append(audit, "trace_id", env.Meta.TraceID)...)
+	return env, nil
+}
+
+// Batched filter writes: how long one call runs before it returns its
+// progress, how many ids each query fetches beyond the batch (so updates
+// the index has not caught up with yet are skipped, not resent), and how
+// often a query that finds only those may be retried.
+var (
+	jobBudget = 4 * time.Minute
+	jobLag    = 2 * time.Second
+)
+
+const (
+	jobPageFactor = 5
+	jobStalls     = 5
+)
+
+// job runs a filter write that matches more than one call may send, up to
+// --max-job records, in batches of the per-call limit. Search APIs cannot
+// page that far (alerts stop at 10,000), so it re-queries the filter from
+// the start after each batch: the write must take records out of the
+// filter (a status filter for a status change, a tag exclusion for a
+// tag), and a query that keeps returning sent records stops the job.
+func (d Deps) job(ctx context.Context, tool string, a Action, w WriteCall, total int) (map[string]any, error) {
+	limit := d.bulkCap(a)
+	switch {
+	case total > d.Config.MaxJob:
+		return nil, fmt.Errorf("filter matches %d records, more than --max-job %d; narrow it", total, d.Config.MaxJob)
+	case strings.TrimSpace(w.Confirm) != strconv.Itoa(total):
+		return nil, fmt.Errorf("filter matches %d records; this runs in batches of %d, re-querying the filter after each, so the write must take records out of the filter (e.g. status:'new' for a close). "+
+			"Check that is what you mean, then repeat with confirm=%q", total, limit, strconv.Itoa(total))
+	}
+	start := time.Now()
+	sent := map[string]bool{}
+	done, batches, stalls := 0, 0, 0
+	progress := func() map[string]any {
+		out := map[string]any{"updated": done, "batches": batches, "matched_at_start": total}
+		if n, err := d.count(ctx, a.Resolve, w.Filter); err == nil {
+			out["remaining"] = n
+			if n > 0 {
+				out["next"] = fmt.Sprintf("records still match: repeat with the same filter and confirm=%q to continue", strconv.Itoa(n))
+			}
+		}
+		return out
+	}
+	for done < total && time.Since(start) < jobBudget {
+		q := url.Values{"filter": {w.Filter}, "limit": {strconv.Itoa(min(10000, limit*jobPageFactor))}}
+		env, err := d.call(ctx, a.Resolve, falcon.Params{Query: q})
+		if err != nil {
+			return nil, fmt.Errorf("after %d records in %d batches, resolving filter: %w", done, batches, err)
+		}
+		var ids []string
+		got := list(env.Resources)
+		for _, x := range got {
+			if s, ok := x.(string); ok && !sent[s] && len(ids) < min(limit, total-done) {
+				ids = append(ids, s)
+			}
+		}
+		if len(got) == 0 {
+			break
+		}
+		if len(ids) == 0 {
+			if stalls++; stalls > jobStalls {
+				return nil, fmt.Errorf("after %d records in %d batches, the filter still matches only records already sent: the write does not take them out of the filter, so the job stopped. "+
+					"Add a clause excluding the change (e.g. status:!'closed', tags:!'x') and run it again", done, batches)
+			}
+			if err := sleepCtx(ctx, jobLag); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		stalls = 0
+		w.Targets = ids
+		if _, err := d.send(ctx, tool, a, w); err != nil {
+			return nil, fmt.Errorf("after %d records in %d batches, a batch failed: %w", done, batches, err)
+		}
+		for _, id := range ids {
+			sent[id] = true
+		}
+		done += len(ids)
+		batches++
+	}
+	return progress(), nil
+}
+
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
+
+// count is how many records filter matches, by one read.
+func (d Deps) count(ctx context.Context, op, filter string) (int, error) {
+	env, err := d.call(ctx, op, falcon.Params{Query: url.Values{"filter": {filter}, "limit": {"1"}}})
+	if err != nil {
+		return 0, fmt.Errorf("resolving filter: %w", err)
+	}
+	if t := env.Meta.Pagination.Total; t != nil {
+		return *t, nil
+	}
+	return len(list(env.Resources)), nil
 }
 
 // targets checks and returns the ids a write acts on. Nothing is sent to

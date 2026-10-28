@@ -94,6 +94,7 @@ in
     check "--client-id client-id-123" cmd
     check "--tool-groups core,respond,hosts,prevent,intel,siem,exposure,identity,ai" cmd
     check "--max-bulk 1000" cmd
+    check "--max-job 0" cmd
     check "--log-level info" cmd
     check "client-secret:/persist/secrets/falcon-client-secret" creds
     check "tcp:8235" bind
@@ -118,6 +119,7 @@ in
         };
         toolGroups = [ "hosts" ];
         maxBulk = 10;
+        maxJob = 50;
         noProbe = true;
         logLevel = "debug";
         http = {
@@ -139,6 +141,7 @@ in
         refute "--allow-destructive" cmd
         check "--tool-groups hosts" cmd
         check "--max-bulk 10" cmd
+        check "--max-job 50" cmd
         check "--no-probe" cmd
         check "--log-level debug" cmd
         check "--addr '[::]:9000'" cmd

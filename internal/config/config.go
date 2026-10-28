@@ -45,6 +45,7 @@ type Config struct {
 
 	Allow   map[string]bool // capability -> enabled
 	MaxBulk int             // most records one write may touch
+	MaxJob  int             // most records a filter write may touch in batches; 0 is off
 
 	HTTP          bool // streamable HTTP instead of stdio
 	Addr          string
@@ -70,6 +71,7 @@ func (c *Config) LogValue() slog.Value {
 		slog.Any("groups", c.Groups),
 		slog.Any("capabilities", c.Enabled()),
 		slog.Int("max_bulk", c.MaxBulk),
+		slog.Int("max_job", c.MaxJob),
 		slog.Bool("http", c.HTTP),
 		slog.String("addr", c.Addr),
 		slog.Bool("http_auth_set", c.HTTPAuthToken != ""),
@@ -103,6 +105,7 @@ func Parse(args []string, getenv func(string) string) (*Config, []string, error)
 		allow[name] = fs.Bool("allow-"+name, false, "enable the "+name+" write capability")
 	}
 	fs.IntVar(&c.MaxBulk, "max-bulk", 1000, "most records one write may touch")
+	fs.IntVar(&c.MaxJob, "max-job", 0, "most records a filter write may touch, sent in batches of --max-bulk (0: off)")
 	fs.BoolVar(&c.NoProbe, "no-probe", false, "skip the startup scope probe and show every action")
 	fs.BoolVar(&stdio, "stdio", false, "serve over stdio (default)")
 	fs.BoolVar(&c.HTTP, "http", false, "serve over streamable HTTP")
@@ -129,6 +132,9 @@ func Parse(args []string, getenv func(string) string) (*Config, []string, error)
 	}
 	if c.MaxBulk < 1 {
 		return nil, nil, errors.New("--max-bulk must be at least 1")
+	}
+	if c.MaxJob < 0 {
+		return nil, nil, errors.New("--max-job must not be negative")
 	}
 	c.Allow = map[string]bool{}
 	for name, on := range allow {

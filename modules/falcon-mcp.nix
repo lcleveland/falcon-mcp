@@ -64,6 +64,8 @@ let
     (lib.concatStringsSep "," cfg.toolGroups)
     "--max-bulk"
     (toString cfg.maxBulk)
+    "--max-job"
+    (toString cfg.maxJob)
     "--log-level"
     cfg.logLevel
   ]
@@ -158,6 +160,11 @@ in
       type = types.ints.positive;
       default = 1000;
       description = "Most records one write may touch.";
+    };
+    maxJob = mkOption {
+      type = types.ints.unsigned;
+      default = 0;
+      description = "Most records a filter write may touch, sent in batches of maxBulk; 0 turns batching off.";
     };
     noProbe = mkOption {
       type = types.bool;

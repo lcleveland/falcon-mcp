@@ -84,6 +84,7 @@ All are off by default. A disabled capability's actions are removed from the too
 - Every write requires `reason`. It goes to the audit log (with the tool, action, capability, target ids and Falcon's trace ID) before the call is sent and again with the outcome. Where Falcon has a comment or note field, the reason goes there too: alert comments, the note on containment and detection suppression, and the comment on quarantine, custom IOA, IOC, exclusion and firewall rule-group writes. Elsewhere (RTR, cases, workflow and report runs) it is audit-logged only.
 - A write touches at most `--max-bulk` records (1000), or Falcon's own per-call limit when that is lower.
 - Writes that act on records take `ids`; some (alert updates, for one) take a `filter` instead. A filter is first resolved to ids with reads only; if it matches nothing, or more than the limit, nothing is sent. Otherwise the reply says how many records it matches, and the write runs only when repeated with `confirm` equal to that count.
+- With `--max-job` above the per-call limit, a filter matching more than one call may send (up to `--max-job`) runs as a batched job once confirmed with its count. Search APIs cannot page that far (alerts stop at 10,000), so the job takes the first matches, sends them, and queries again: the write must take records out of the filter (`status:'new'` for a close, `tags:!'x'` for adding tag `x`), and a job whose query keeps returning records it already sent stops. It never sends more than the confirmed count, logs every batch, and returns its progress after about four minutes; repeat with the remaining count as `confirm` to continue.
 - Host actions (contain, lift containment, suppress detections, hide and unhide, uninstall-token reveal, RTR responder commands) take exactly one device id and need `confirm` equal to that host's hostname. A mismatch fails before anything is sent.
 - Writes are never retried automatically. Falcon takes no idempotency keys, so a retried write could happen twice.
 
@@ -114,6 +115,7 @@ Each filter's description and each action's help names its guide. Only the guide
 | `--client-secret-file` | `FALCON_CLIENT_SECRET_FILE` | see below |
 | `--allow-<capability>` | | all off |
 | `--max-bulk` | | 1000 |
+| `--max-job` | | 0 (off) |
 | `--tool-groups` (`core`, `respond`, `hosts`, `prevent`, `intel`, `siem`, `exposure`, `identity`, `ai`) | | all; `core` is always on |
 | `--no-probe` | | probe on |
 | `--stdio` / `--http` | | stdio |
@@ -313,7 +315,7 @@ Scopes the server uses that are not in that list; find them by name:
 | `clientSecretFile` | | a runtime path string, never a Nix path |
 | `allow.<capability>` | `false` | one per capability, e.g. `allow.rtr-read` |
 | `toolGroups` | all | |
-| `maxBulk`, `noProbe` | 1000, `false` | |
+| `maxBulk`, `maxJob`, `noProbe` | 1000, 0, `false` | |
 | `http.enable` | off | |
 | `http.addr`, `http.path` | `127.0.0.1:8235`, `/mcp` | |
 | `http.authTokenFile` | none | required for a non-loopback `addr` |
