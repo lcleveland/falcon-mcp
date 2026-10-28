@@ -41,8 +41,9 @@ type StatusOutput struct {
 }
 
 type statusInput struct {
-	Action string `json:"action,omitempty" jsonschema:"check (the default) or guide"`
+	Action string `json:"action,omitempty" jsonschema:"check (the default), guide, job_status or job_cancel"`
 	Name   string `json:"name,omitempty" jsonschema:"for guide: the guide's name from the guides list, e.g. hosts/search/fql-guide"`
+	JobID  string `json:"job_id,omitempty" jsonschema:"for job_status and job_cancel: the write job's id"`
 }
 
 // statusOp is the cheap read whose reply carries the rate-limit headers.
@@ -59,7 +60,10 @@ func registerStatus(s *mcp.Server, d Deps) {
 			"Call this first when another tool fails: it tells rejected credentials apart from a token that " +
 			"works but lacks a scope.\n\n" +
 			"action=guide with name returns a query guide (FQL filter syntax, CQL, workflows) as markdown, the same text " +
-			"as its falcon:// resource. Read an action's guide before writing its filter.",
+			"as its falcon:// resource. Read an action's guide before writing its filter.\n\n" +
+			"action=job_status with job_id reports a background write job (a filter write too large for one call): state running|done|failed|cancelled, " +
+			"processed, remaining_estimate, last_error, started, finished; without job_id it lists every job. action=job_cancel with job_id stops one after its current batch. " +
+			"Jobs live in memory: a restart ends them, and rerunning the same filter write resumes where it stopped.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: new(true)},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in statusInput) (*mcp.CallToolResult, any, error) {
 		switch in.Action {
@@ -71,8 +75,21 @@ func registerStatus(s *mcp.Server, d Deps) {
 				return nil, nil, err
 			}
 			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil, nil
+		case "job_status", "job_cancel":
+			if in.JobID == "" && in.Action == "job_status" {
+				return nil, map[string]any{"jobs": d.writes.list()}, nil
+			}
+			j, err := d.writes.get(in.JobID)
+			if err != nil {
+				return nil, nil, err
+			}
+			if in.Action == "job_cancel" {
+				d.Log.Info("falcon write job cancel requested", "job_id", j.id)
+				j.cancel()
+			}
+			return nil, j.status(), nil
 		}
-		return nil, nil, fmt.Errorf("action %q: want check or guide", in.Action)
+		return nil, nil, fmt.Errorf("action %q: want check, guide, job_status or job_cancel", in.Action)
 	})
 }
 

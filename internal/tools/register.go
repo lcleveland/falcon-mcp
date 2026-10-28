@@ -21,16 +21,19 @@ type Deps struct {
 	Probes *falcon.Probes // nil shows everything
 	Log    *slog.Logger
 
-	jobs *jobs // live NGSIEM searches
+	jobs   *jobs      // live NGSIEM searches
+	writes *writeJobs // batched filter writes
 }
 
 // Register adds every enabled tool and returns how many it added, and a
-// func that stops what the tools left running (NGSIEM jobs) at shutdown.
+// func that stops what the tools left running (NGSIEM and write jobs) at
+// shutdown.
 func Register(s *mcp.Server, d Deps) (int, func()) {
 	if d.Log == nil {
 		d.Log = slog.New(slog.DiscardHandler)
 	}
 	d.jobs = newJobs(d.Client, d.Log)
+	d.writes = newWriteJobs()
 	registerStatus(s, d)
 	registerAPI(s, d)
 	registerGuides(s, d)
@@ -41,7 +44,7 @@ func Register(s *mcp.Server, d Deps) (int, func()) {
 			n++
 		}
 	}
-	return n, d.jobs.Close
+	return n, func() { d.jobs.Close(); d.writes.Close() }
 }
 
 // actions are the tool's actions this server shows: its group is on and the
@@ -175,6 +178,10 @@ func help(t Tool, as []Action) string {
 	}
 	if slices.ContainsFunc(as, isWrite) {
 		b.WriteString("Writes require reason (audit-logged) and are never retried automatically. ")
+	}
+	if slices.ContainsFunc(as, func(a Action) bool { return a.Kind == Write && a.Resolve != "" }) {
+		b.WriteString("A filter write too large for one call runs as a background job where the operator allows it (--max-job): it returns job_id at once, and falcon_status job_status follows it. " +
+			"The write must take records out of the filter. Jobs live in memory: a restart ends one, and rerunning the same filter write resumes where it stopped. ")
 	}
 	b.WriteString("Timestamps are RFC 3339 UTC.")
 	return b.String()

@@ -8,7 +8,7 @@ The server is read-only by default. Writes are turned on per **capability** (tri
 
 | Group | Tools |
 |---|---|
-| core (always on) | `falcon_status` (auth, cloud, rate-limit headroom, the startup probe, and `action=guide`), `falcon_api` (any Falcon operation, capability-gated) |
+| core (always on) | `falcon_status` (auth, cloud, rate-limit headroom, the startup probe, `action=guide`, and background write jobs), `falcon_api` (any Falcon operation, capability-gated) |
 | respond | `falcon_alert`, `falcon_case`, `falcon_rtr` (Real Time Response), `falcon_quarantine` |
 | hosts | `falcon_host`, `falcon_host_group`, `falcon_discover` (applications, managed and unmanaged assets, logins, accounts), `falcon_zta` (Zero Trust Assessment), `falcon_sensor` (builds, kernels, installers), `falcon_sensor_usage` |
 | prevent | `falcon_policy` (by `policy_type`: prevention, sensor_update, firewall, device_control, response, content_update), `falcon_exclusion` (by `exclusion_type`: ioa, ml, sensor_visibility, certificate), `falcon_firewall`, `falcon_custom_ioa`, `falcon_ioc` |
@@ -22,7 +22,7 @@ Every tool takes an `action`; each tool's description lists its actions and what
 
 | Tool | Read actions | Write actions (capability) |
 |---|---|---|
-| `falcon_status` | check (the default), guide | |
+| `falcon_status` | check (the default), guide, job_status, job_cancel | |
 | `falcon_api` | any GET, by `op` or `method` and `path` | see below |
 | `falcon_alert` | search, get, aggregate | update (triage) |
 | `falcon_case` | search, get, list_templates, aggregate_slas, aggregate_templates, aggregate_access_tags, aggregate_notification_groups, aggregate_file_details | create, update, add_alert_evidence, add_event_evidence, add_tags, remove_tags (triage) |
@@ -84,9 +84,9 @@ All are off by default. A disabled capability's actions are removed from the too
 - Every write requires `reason`. It goes to the audit log (with the tool, action, capability, target ids and Falcon's trace ID) before the call is sent and again with the outcome. Where Falcon has a comment or note field, the reason goes there too: alert comments, the note on containment and detection suppression, and the comment on quarantine, custom IOA, IOC, exclusion and firewall rule-group writes. Elsewhere (RTR, cases, workflow and report runs) it is audit-logged only.
 - A write touches at most `--max-bulk` records (1000), or Falcon's own per-call limit when that is lower.
 - Writes that act on records take `ids`; some (alert updates, for one) take a `filter` instead. A filter is first resolved to ids with reads only; if it matches nothing, or more than the limit, nothing is sent. Otherwise the reply says how many records it matches, and the write runs only when repeated with `confirm` equal to that count.
-- With `--max-job` above the per-call limit, a filter matching more than one call may send (up to `--max-job`) runs as a batched job once confirmed with its count. Search APIs cannot page that far (alerts stop at 10,000), so the job takes the first matches, sends them, and queries again: the write must take records out of the filter (`status:'new'` for a close, `tags:!'x'` for adding tag `x`), and a job whose query keeps returning records it already sent stops. It never sends more than the confirmed count, logs every batch, and returns its progress after about four minutes; repeat with the remaining count as `confirm` to continue.
+- With `--max-job` above the per-call limit, a filter matching more than one call may send (up to `--max-job`) runs as a background job once confirmed with its count, and the call returns `job_id` at once. Search APIs cannot page that far (alerts stop at 10,000), so the job takes the first matches, sends them in batches of the per-call limit, and queries again: the write must take records out of the filter (`status:'new'` for a close, `tags:!'x'` for adding tag `x`). It stops when the filter matches nothing, when it reaches the confirmed count, or when a batch takes nothing out of the filter (so it cannot loop). A 429, 5xx or network error waits and goes on, by re-querying rather than resending; five in a row fail the job. Every batch is audit-logged with the job id, as are the start (with the reason) and the end. `falcon_status` `job_status` reports state, processed, remaining estimate and last error, and `job_cancel` stops a job. One job runs per action at a time. Jobs live in memory: a restart ends them, and rerunning the same filter write resumes.
 - Host actions (contain, lift containment, suppress detections, hide and unhide, uninstall-token reveal, RTR responder commands) take exactly one device id and need `confirm` equal to that host's hostname. A mismatch fails before anything is sent.
-- Writes are never retried automatically. Falcon takes no idempotency keys, so a retried write could happen twice.
+- Writes are never retried automatically. Falcon takes no idempotency keys, so a retried write could happen twice. (A background job re-queries its filter after a failed batch instead, so records the failed call did change are not sent again.)
 
 ## Probe
 

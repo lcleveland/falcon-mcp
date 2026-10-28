@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"slices"
 	"strconv"
@@ -868,10 +869,15 @@ type alertStore struct {
 	open    []string
 	closed  map[string]int // times each was patched
 	drain   bool
+	fail    int           // patches to answer 502 before succeeding
+	delay   time.Duration // per patch
 	batches []int
 }
 
 func (s *alertStore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPatch {
+		time.Sleep(s.delay)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	switch r.Method + " " + r.URL.Path {
@@ -888,6 +894,12 @@ func (s *alertStore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		b, _ := json.Marshal(map[string]any{"meta": map[string]any{"pagination": map[string]any{"total": total}}, "resources": ids})
 		w.Write(b)
 	case "PATCH /alerts/entities/alerts/v3":
+		if s.fail > 0 {
+			s.fail--
+			w.WriteHeader(http.StatusBadGateway)
+			io.WriteString(w, `{"errors":[{"message":"busy"}]}`)
+			return
+		}
 		var body struct {
 			IDs []string `json:"composite_ids"`
 		}
@@ -902,53 +914,106 @@ func (s *alertStore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func TestBatchedFilterWrite(t *testing.T) {
-	defer func(l time.Duration) { jobLag = l }(jobLag)
-	jobLag = time.Millisecond
-	run := func(n int, drain bool, confirm string) (*alertStore, map[string]any, bool, string) {
-		s := &alertStore{closed: map[string]int{}, drain: drain}
+func (s *alertStore) patched() ([]int, map[string]int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.batches), maps.Clone(s.closed)
+}
+
+func TestBackgroundFilterWrite(t *testing.T) {
+	defer func(l, b time.Duration) { jobLag, jobBackoff = l, b }(jobLag, jobBackoff)
+	jobLag, jobBackoff = time.Millisecond, time.Millisecond
+	type session = func(string, map[string]any) (map[string]any, bool, string)
+	start := func(s *alertStore, n int) session {
+		s.closed = map[string]int{}
 		for i := range n {
 			s.open = append(s.open, fmt.Sprintf("a:%d", i))
 		}
-		cfg := &config.Config{Allow: map[string]bool{"triage": true}, MaxBulk: 10, MaxJob: 100}
+		cfg := &config.Config{Allow: map[string]bool{"triage": true}, MaxBulk: 10, MaxJob: 2000}
 		cs := sessionLog(t, cfg, nil, http.StatusCreated, s.ServeHTTP, slog.New(slog.DiscardHandler))
-		out, isErr, msg := callTool(t, cs, "falcon_alert", map[string]any{"action": "update", "filter": "status:'new'", "confirm": confirm,
+		return func(tool string, args map[string]any) (map[string]any, bool, string) {
+			return callTool(t, cs, tool, args)
+		}
+	}
+	update := func(call session, confirm string) (map[string]any, bool, string) {
+		return call("falcon_alert", map[string]any{"action": "update", "filter": "status:'new'", "confirm": confirm,
 			"params": map[string]any{"update_status": "closed"}, "reason": "r"})
-		return s, out, isErr, msg
+	}
+	wait := func(call session, id string) map[string]any {
+		for range 2000 {
+			st, isErr, msg := call("falcon_status", map[string]any{"action": "job_status", "job_id": id})
+			if isErr {
+				t.Fatal(msg)
+			}
+			if st["state"] != "running" {
+				return st
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		t.Fatal("job still running")
+		return nil
+	}
+	once := func(closed map[string]int) {
+		for id, n := range closed {
+			if n != 1 {
+				t.Errorf("%s patched %d times", id, n)
+			}
+		}
 	}
 
-	// Unconfirmed, or over --max-job: nothing is sent.
+	// Unconfirmed, or over --max-job: nothing starts.
 	for _, c := range []struct {
 		n       int
 		confirm string
 		want    string
-	}{{25, "", "confirm=\"25\""}, {101, "101", "--max-job"}} {
-		s, _, isErr, msg := run(c.n, true, c.confirm)
-		if !isErr || !strings.Contains(msg, c.want) || len(s.batches) != 0 {
-			t.Errorf("%d: isErr %v, msg %q, batches %v", c.n, isErr, msg, s.batches)
+	}{{25, "", "confirm=\"25\""}, {2001, "2001", "--max-job"}} {
+		s := &alertStore{drain: true}
+		_, isErr, msg := update(start(s, c.n), c.confirm)
+		if b, _ := s.patched(); !isErr || !strings.Contains(msg, c.want) || len(b) != 0 {
+			t.Errorf("%d: isErr %v, msg %q, batches %v", c.n, isErr, msg, b)
 		}
 	}
 
-	// A draining filter runs in batches of --max-bulk, each record once.
-	s, out, isErr, msg := run(25, true, "25")
-	if isErr || !slices.Equal(s.batches, []int{10, 10, 5}) || out["updated"] != float64(25) || out["remaining"] != float64(0) {
-		t.Errorf("isErr %v %s, batches %v, out %v", isErr, msg, s.batches, out)
+	// A draining filter returns a job at once and finishes in batches of
+	// --max-bulk, each record once, riding out two 502s.
+	s := &alertStore{drain: true, fail: 2}
+	call := start(s, 25)
+	out, isErr, msg := update(call, "25")
+	if isErr || out["job_id"] == nil || out["batches_planned"] != float64(3) {
+		t.Fatalf("isErr %v %s, out %v", isErr, msg, out)
 	}
-	for id, n := range s.closed {
-		if n != 1 {
-			t.Errorf("%s patched %d times", id, n)
-		}
+	st := wait(call, out["job_id"].(string))
+	b, closed := s.patched()
+	if st["state"] != "done" || st["processed"] != float64(25) || st["remaining_estimate"] != float64(0) || !slices.Equal(b, []int{10, 10, 5}) {
+		t.Errorf("status %v, batches %v", st, b)
+	}
+	once(closed)
+
+	// A filter the write leaves matching fails after one batch.
+	s = &alertStore{}
+	call = start(s, 60)
+	out, _, _ = update(call, "60")
+	st = wait(call, out["job_id"].(string))
+	if b, _ := s.patched(); st["state"] != "failed" || !strings.Contains(fmt.Sprint(st["last_error"]), "took nothing out") || !slices.Equal(b, []int{10}) {
+		t.Errorf("status %v, batches %v", st, b)
 	}
 
-	// A filter the write leaves matching stops once its window is spent,
-	// without resending anything.
-	s, _, isErr, msg = run(60, false, "60")
-	if !isErr || !strings.Contains(msg, "already sent") || !slices.Equal(s.batches, []int{10, 10, 10, 10, 10}) {
-		t.Errorf("isErr %v, msg %q, batches %v", isErr, msg, s.batches)
+	// A second job on the same action is refused while one runs, and
+	// cancel stops it.
+	s = &alertStore{drain: true, delay: 10 * time.Millisecond}
+	call = start(s, 1000)
+	out, _, _ = update(call, "1000")
+	id := out["job_id"].(string)
+	if _, isErr, msg := update(call, "990"); !isErr || !strings.Contains(msg, "already running") {
+		t.Errorf("second job: isErr %v, msg %q", isErr, msg)
 	}
-	for id, n := range s.closed {
-		if n != 1 {
-			t.Errorf("%s patched %d times", id, n)
-		}
+	if _, isErr, msg := call("falcon_status", map[string]any{"action": "job_cancel", "job_id": id}); isErr {
+		t.Fatal(msg)
 	}
+	st = wait(call, id)
+	b, closed = s.patched()
+	if st["state"] != "cancelled" || len(b) >= 100 {
+		t.Errorf("status %v, %d batches", st, len(b))
+	}
+	once(closed)
 }
