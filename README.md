@@ -90,7 +90,7 @@ All are off by default. A disabled capability's actions are removed from the too
 
 ## Probe
 
-At startup the server makes one cheap read (`limit=1`) per read scope, concurrently, within 10 seconds. A 403 that is not a token error means "missing scope or not licensed", and that scope's actions are hidden. A write is shown only when its family's read scope passed, and a tool left with no actions is not listed. Anything uncertain (a timeout, a 5xx) fails open and shows the actions.
+At startup the server makes one cheap read (`limit=1`) per read scope, concurrently, within 10 seconds. A 403 that is not a token error means "missing scope or not licensed", and that scope's actions are hidden. A write is shown only when its family's read scope passed, and a tool left with no actions is not listed. Anything uncertain (a timeout, a 5xx) fails open and shows the actions. If no token can be had at startup (the network is not up yet, say), the server retries for 15 seconds, then starts with nothing probed and every action shown; `falcon_status` says so, and a restart once Falcon is reachable runs the probe.
 
 `falcon_status` reports the cloud and base URL, whether the token works and when it expires, the rate-limit headroom from one read, the probe result for each scope, the enabled tool groups and capabilities, each visible tool's actions, and the guides. Call it first when another tool fails. The probe runs once, so restart the server after granting a scope.
 

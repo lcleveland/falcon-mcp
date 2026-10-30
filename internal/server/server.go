@@ -4,7 +4,9 @@ package server
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -30,19 +32,45 @@ func instructions(c *falcon.Client) string {
 		"or falcon_status action=guide name=<guide>. Falcon rejects or silently misreads filters on fields it does not know."
 }
 
+// tokenRetry is how long startup keeps asking for a token that failed
+// without a refusal: the network (DNS, a VPN or ZTNA client) may not be up yet.
+var tokenRetry = 15 * time.Second
+
 // Probe runs the startup scope probe. Credentials the token endpoint refuses
-// (or an unknown cloud) stop the server; any other token failure starts it
-// with nothing probed and every action shown.
+// (or an unknown cloud) stop the server; any other token failure is retried
+// for tokenRetry, then starts it with nothing probed and every action shown.
+//
+// shortcut: the probe never re-runs once serving; re-probing on the first
+// later token would need tools re-registered under a lock, so falcon_status
+// tells the operator to restart instead.
 func Probe(ctx context.Context, cfg *config.Config, c *falcon.Client, log *slog.Logger) (*falcon.Probes, error) {
 	if cfg.NoProbe {
 		return &falcon.Probes{Note: "skipped (--no-probe)"}, nil
 	}
-	if _, err := c.Authenticate(ctx); err != nil {
+	deadline := time.Now().Add(tokenRetry)
+	for wait := time.Second; ; wait *= 2 {
+		_, err := c.Authenticate(ctx)
+		if err == nil {
+			break
+		}
 		if falcon.IsFatal(err) {
 			return nil, err
 		}
+		if time.Now().Add(wait).Before(deadline) {
+			log.Warn("no token at startup; retrying", "in", wait, "error", err)
+			select {
+			case <-time.After(wait):
+				continue
+			case <-ctx.Done():
+			}
+		}
+		why := "Falcon answered with an error"
+		if ae := (*falcon.APIError)(nil); !errors.As(err, &ae) {
+			why = "network error"
+		}
 		log.Warn("no token at startup; serving with nothing probed", "error", err)
-		return &falcon.Probes{Note: "not run: no token at startup: " + err.Error()}, nil
+		return &falcon.Probes{Note: "not run: no token at startup (" + why + "): " + err.Error() +
+			"; every action is shown. Restart the server once Falcon is reachable to run the probe."}, nil
 	}
 	return c.Probe(ctx, falcon.ProbeDeadline), nil
 }
