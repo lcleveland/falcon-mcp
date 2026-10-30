@@ -47,10 +47,12 @@ var siemTools = []Tool{
 			{Name: "execute", Help: "run an on-demand workflow; params definition_id or name, and key (deduplicates runs); body is the trigger input the workflow expects. " +
 				"It does whatever the workflow does, which may include containment. Workflows have no comment field: the reason is audit-logged only.",
 				Kind: Write, Capability: "workflows", Op: "WorkflowExecute", Inputs: []string{"body"}, Params: []string{"definition_id", "name", "key"}, Send: workflowExecute},
-			{Name: "import", Help: "create a workflow from a YAML definition (body: the YAML text, as an export returns it); params name (overrides the YAML's), validate_only=true to check it without creating. " +
+			{Name: "import", Help: "create a workflow from a YAML definition (body: the YAML text, as an export returns it); params name (overrides the YAML's), validate_only. " +
+				"validate_only=true skips saving but does not catch structural errors (an unknown trigger or action, a next naming a missing node): it returns resources [{parameters: null}] for valid and invalid definitions alike. The reliable check is a real import (imports arrive disabled), then enable it and inspect its first execution with search_executions and get_execution_results. " +
 				"Falcon creates and edits workflows only as YAML. An imported workflow runs on its trigger if enabled.",
 				Kind: Write, Capability: "workflows", Op: "WorkflowDefinitionsImport", Inputs: []string{"body"}, Params: []string{"name", "validate_only"}, Brief: workflowDefBrief, Send: workflowImport},
-			{Name: "update", Help: "replace a workflow definition; body is the whole definition as JSON, with its id (as search_definitions returns it, fields id, name, description, trigger, actions, conditions, enabled); params validate_only=true to check it without saving. Fields left out are dropped from the workflow.",
+			{Name: "update", Help: "replace a workflow definition; body is the whole definition as JSON, with its id (as search_definitions returns it, fields id, name, description, trigger, actions, conditions, enabled); params validate_only. " +
+				"validate_only=true skips saving but does not catch structural errors (an unknown trigger or action, a next naming a missing node): it returns resources [{parameters: null}] for valid and invalid definitions alike. The reliable check is to import the definition as a new workflow (it arrives disabled) and inspect its first execution. Fields left out are dropped from the workflow.",
 				Kind: Write, Capability: "workflows", Op: "WorkflowDefinitionsUpdate", Inputs: []string{"body"}, Params: []string{"validate_only"}, Brief: workflowDefBrief, Send: workflowUpdate},
 			{Name: "enable", Help: "enable workflow definitions by id (ids); they run on their next trigger event. Imports always arrive disabled.",
 				Kind: Write, Capability: "workflows", Op: "WorkflowDefinitionsAction", Target: TargetIDs, Send: workflowAction("enable")},
